@@ -39,7 +39,7 @@
 앞으로 아래 순서대로 개발한다.
 
 ```text
-Supabase Local 구축
+Supabase 프로젝트 생성 및 연결 설정
 → ERD 설계
 → PostgreSQL Schema 작성
 → FastAPI 서버 생성
@@ -96,9 +96,9 @@ PostgreSQL
 Supabase PostgreSQL
 ```
 
-개발 중에는 Docker를 이용해 **Supabase Local**을 실행한다.
+개발 중에는 Docker나 Supabase Local을 사용하지 않고, 별도로 생성한 Supabase 프로젝트의 PostgreSQL에 직접 연결한다.
 
-운영 단계에서는 Supabase PostgreSQL을 사용할 예정이다.
+운영 단계에서는 개발 환경과 분리된 Supabase PostgreSQL 프로젝트를 사용할 예정이다.
 
 Supabase의 자동 API에 핵심 로직을 맡기지 않고 기본적으로 다음 구조를 사용한다.
 
@@ -675,9 +675,9 @@ Repository
 ↓
 프로젝트 기본 구조
 ↓
-Supabase Local
+Supabase 프로젝트 생성 및 연결 설정
 ↓
-PostgreSQL 실행 확인
+Supabase PostgreSQL 연결 확인
 ```
 
 ---
@@ -706,7 +706,7 @@ Migration 작성
 
 ↓
 
-로컬 PostgreSQL에 적용
+Supabase PostgreSQL에 적용
 ```
 
 ---
@@ -826,7 +826,6 @@ GPS
 실시간 채팅
 Push 알림
 AWS
-Docker 배포
 상품 크롤링
 복잡한 UI
 완벽한 예외처리
@@ -1059,9 +1058,9 @@ DB 저장 결과
 ```text
 1. 프로젝트 기본 폴더 구조 생성
 
-2. Supabase Local 개발환경 생성
+2. Supabase 프로젝트 생성 및 연결 설정
 
-3. PostgreSQL 실행 확인
+3. Supabase PostgreSQL 연결 확인
 
 4. 핵심 ERD 설계
 
