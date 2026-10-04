@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.database import test_connection
 
 app = FastAPI()
 
