@@ -1,4 +1,5 @@
 from fastapi import APIRouter, status
+from psycopg.rows import dict_row
 
 from app.database import get_connection
 from app.schemas.posts import PostCreateRequest, PostResponse
@@ -71,3 +72,32 @@ def create_post(post: PostCreateRequest):
         "status": row[11],
         "created_at": row[12],
     }
+
+
+@router.get("", response_model=list[PostResponse], status_code=status.HTTP_200_OK)
+def get_posts():
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    author_id,
+                    product_name,
+                    product_url,
+                    image_url,
+                    total_price,
+                    total_quantity,
+                    host_quantity,
+                    deadline,
+                    pickup_location,
+                    shortfall_policy,
+                    status,
+                    created_at
+                FROM posts
+                ORDER BY created_at DESC
+                """
+            )
+            rows = cursor.fetchall()
+
+    return [PostResponse.model_validate(row) for row in rows]
