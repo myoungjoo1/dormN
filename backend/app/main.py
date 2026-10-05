@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from app.database import test_connection
+from app.routers.posts import router as posts_router
 
 app = FastAPI()
+app.include_router(posts_router)
 
 @app.get("/hello")
 def hello():
