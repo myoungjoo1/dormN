@@ -110,3 +110,60 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
             row = cursor.fetchone()
 
     return ParticipationResponse.model_validate(row)
+
+
+@router.delete("/{post_id}/join", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_join(post_id: int):
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    author_id,
+                    status,
+                    deadline <= NOW() AS deadline_expired
+                FROM posts
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (post_id,),
+            )
+            post = cursor.fetchone()
+
+            if post is None:
+                raise HTTPException(status_code=404, detail="Post not found")
+
+            if post["author_id"] == DEVELOPMENT_USER_ID:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Post author cannot cancel participation",
+                )
+
+            if post["status"] != "RECRUITING":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Post is not recruiting",
+                )
+
+            if post["deadline_expired"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Post recruitment deadline has passed",
+                )
+
+            cursor.execute(
+                """
+                DELETE FROM participations
+                WHERE post_id = %s AND user_id = %s
+                RETURNING id
+                """,
+                (post_id, DEVELOPMENT_USER_ID),
+            )
+            participation = cursor.fetchone()
+
+            if participation is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Participation not found",
+                )
