@@ -24,6 +24,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
                 """
                 SELECT
                     id,
+                    author_id,
                     status,
                     deadline,
                     total_quantity,
@@ -39,6 +40,12 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
 
             if post is None:
                 raise HTTPException(status_code=404, detail="Post not found")
+
+            if post["author_id"] == DEVELOPMENT_USER_ID:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Post author cannot join own post",
+                )
 
             if post["status"] != "RECRUITING":
                 raise HTTPException(
