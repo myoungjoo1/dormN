@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from psycopg.rows import dict_row
 
 from app.database import get_connection
@@ -101,3 +101,36 @@ def get_posts():
             rows = cursor.fetchall()
 
     return [PostResponse.model_validate(row) for row in rows]
+
+
+@router.get("/{post_id}", response_model=PostResponse)
+def get_post(post_id: int):
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    author_id,
+                    product_name,
+                    product_url,
+                    image_url,
+                    total_price,
+                    total_quantity,
+                    host_quantity,
+                    deadline,
+                    pickup_location,
+                    shortfall_policy,
+                    status,
+                    created_at
+                FROM posts
+                WHERE id = %s
+                """,
+                (post_id,),
+            )
+            row = cursor.fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    return PostResponse.model_validate(row)
