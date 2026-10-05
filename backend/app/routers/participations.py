@@ -6,6 +6,7 @@ from app.schemas.participations import (
     ParticipationCreateRequest,
     ParticipationResponse,
 )
+from app.services.recruitment import finalize_recruitment
 
 
 router = APIRouter(prefix="/posts", tags=["participations"])
@@ -108,6 +109,8 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
                 (post_id, DEVELOPMENT_USER_ID, participation.quantity),
             )
             row = cursor.fetchone()
+
+        finalize_recruitment(conn, post_id)
 
     return ParticipationResponse.model_validate(row)
 
