@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.database import test_connection
 from app.routers.participations import router as participations_router
 from app.routers.posts import router as posts_router
+from app.routers.settlements import router as settlements_router
 from app.services.recruitment import process_expired_recruitment_once
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.include_router(posts_router)
 app.include_router(participations_router)
+app.include_router(settlements_router)
 
 @app.get("/hello")
 def hello():

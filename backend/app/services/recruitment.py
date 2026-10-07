@@ -3,6 +3,44 @@ from psycopg.rows import dict_row
 from app.database import get_connection
 
 
+def calculate_settlement_amount(
+    total_price: int,
+    participation_quantity: int,
+    total_quantity: int,
+) -> int:
+    return total_price * participation_quantity // total_quantity
+
+
+def create_settlements(conn, post_id: int, total_price: int, total_quantity: int):
+    with conn.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            """
+            SELECT id, quantity
+            FROM participations
+            WHERE post_id = %s
+            """,
+            (post_id,),
+        )
+        participations = cursor.fetchall()
+
+        for participation in participations:
+            cursor.execute(
+                """
+                INSERT INTO settlements (participation_id, amount)
+                VALUES (%s, %s)
+                ON CONFLICT (participation_id) DO NOTHING
+                """,
+                (
+                    participation["id"],
+                    calculate_settlement_amount(
+                        total_price,
+                        participation["quantity"],
+                        total_quantity,
+                    ),
+                ),
+            )
+
+
 def finalize_recruitment(conn, post_id: int):
     with conn.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
@@ -10,6 +48,7 @@ def finalize_recruitment(conn, post_id: int):
             SELECT
                 id,
                 status,
+                total_price,
                 total_quantity,
                 host_quantity,
                 shortfall_policy,
@@ -77,7 +116,17 @@ def finalize_recruitment(conn, post_id: int):
             """,
             (final_host_quantity, final_status, post_id),
         )
-        return cursor.fetchone()
+        finalized_post = cursor.fetchone()
+
+    if final_status == "CLOSED":
+        create_settlements(
+            conn,
+            post_id,
+            post["total_price"],
+            post["total_quantity"],
+        )
+
+    return finalized_post
 
 
 def process_expired_recruitment_once():
