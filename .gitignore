@@ -12,6 +12,9 @@ backend/.venv/
 .env
 *.env
 
+# Database backups
+db/backups/
+
 # VS Code
 .vscode/
 
