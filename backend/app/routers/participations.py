@@ -6,11 +6,11 @@ from app.schemas.participations import (
     ParticipationCreateRequest,
     ParticipationResponse,
 )
+from app.development import DEVELOPMENT_PARTICIPANT_USER_ID
 from app.services.recruitment import finalize_recruitment
 
 
 router = APIRouter(prefix="/posts", tags=["participations"])
-DEVELOPMENT_USER_ID = 4
 
 
 @router.post(
@@ -42,7 +42,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
             if post is None:
                 raise HTTPException(status_code=404, detail="Post not found")
 
-            if post["author_id"] == DEVELOPMENT_USER_ID:
+            if post["author_id"] == DEVELOPMENT_PARTICIPANT_USER_ID:
                 raise HTTPException(
                     status_code=409,
                     detail="Post author cannot join own post",
@@ -62,7 +62,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
 
             cursor.execute(
                 "SELECT 1 FROM users WHERE id = %s",
-                (DEVELOPMENT_USER_ID,),
+                (DEVELOPMENT_PARTICIPANT_USER_ID,),
             )
             if cursor.fetchone() is None:
                 raise HTTPException(status_code=404, detail="User not found")
@@ -73,7 +73,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
                 FROM participations
                 WHERE post_id = %s AND user_id = %s
                 """,
-                (post_id, DEVELOPMENT_USER_ID),
+                (post_id, DEVELOPMENT_PARTICIPANT_USER_ID),
             )
             if cursor.fetchone() is not None:
                 raise HTTPException(
@@ -106,7 +106,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
                 VALUES (%s, %s, %s)
                 RETURNING id, post_id, user_id, quantity, created_at
                 """,
-                (post_id, DEVELOPMENT_USER_ID, participation.quantity),
+                (post_id, DEVELOPMENT_PARTICIPANT_USER_ID, participation.quantity),
             )
             row = cursor.fetchone()
 
@@ -137,7 +137,7 @@ def cancel_join(post_id: int):
             if post is None:
                 raise HTTPException(status_code=404, detail="Post not found")
 
-            if post["author_id"] == DEVELOPMENT_USER_ID:
+            if post["author_id"] == DEVELOPMENT_PARTICIPANT_USER_ID:
                 raise HTTPException(
                     status_code=409,
                     detail="Post author cannot cancel participation",
@@ -161,7 +161,7 @@ def cancel_join(post_id: int):
                 WHERE post_id = %s AND user_id = %s
                 RETURNING id
                 """,
-                (post_id, DEVELOPMENT_USER_ID),
+                (post_id, DEVELOPMENT_PARTICIPANT_USER_ID),
             )
             participation = cursor.fetchone()
 

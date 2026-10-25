@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status
 from psycopg.rows import dict_row
 
 from app.database import get_connection
+from app.development import DEVELOPMENT_HOST_USER_ID
 from app.schemas.posts import PostCreateRequest, PostResponse
 
 
@@ -43,7 +44,7 @@ def create_post(post: PostCreateRequest):
                     created_at
                 """,
                 (
-                    1,
+                    DEVELOPMENT_HOST_USER_ID,
                     post.product_name,
                     post.product_url,
                     post.image_url,
