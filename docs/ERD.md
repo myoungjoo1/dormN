@@ -2,6 +2,11 @@
 
 DormN MVP의 핵심 데이터 구조를 정리한다.
 
+사용자 식별자는 Supabase Auth의 `auth.users.id` UUID를 기준으로 한다.
+`public.users.id`는 같은 UUID를 저장하고 `auth.users(id)`를 참조한다.
+따라서 `posts.author_id`와 `participations.user_id`도 UUID이며,
+공동구매 글·참여·정산 자체의 ID는 기존처럼 BIGINT를 사용한다.
+
 현재 우선 구현하는 핵심 테이블은 다음 4개이다.
 
 ```text
@@ -19,8 +24,8 @@ DormN 사용자의 서비스 내 정보를 저장한다.
 수경재 인증을 완료하기 전까지는 일부 기능만 사용할 수 있다.
 컬럼
 컬럼	타입	제약조건	역할
-id	BIGINT	PRIMARY KEY, 자동 생성	DormN 내부 사용자 고유 ID
-kakao_id	TEXT	UNIQUE, NOT NULL	카카오 계정 식별값
+id	UUID	PRIMARY KEY, auth.users(id) FK	Supabase Auth 사용자 ID
+kakao_id	TEXT	UNIQUE, NULL 가능	카카오 계정 식별값
 room_number	VARCHAR(20)	UNIQUE, NULL 가능	DormN에서 사용하는 호실명
 dorm_verified	BOOLEAN	NOT NULL, DEFAULT FALSE	수경재 인증 완료 여부
 dorm_verified_at	TIMESTAMPTZ	NULL 가능	수경재 인증 완료 시각
@@ -29,14 +34,14 @@ created_at	TIMESTAMPTZ	NOT NULL, DEFAULT NOW()	DormN 계정 생성 시각
 
 예시
 카카오 로그인만 완료한 상태:
-id = 1
+id = Auth UUID
 kakao_id = "kakao_user_123"
 room_number = NULL
 dorm_verified = false
 dorm_verified_at = NULL
 
 수경재 인증까지 완료한 상태:
-id = 1
+id = 같은 Auth UUID
 kakao_id = "kakao_user_123"
 room_number = "717-1"
 dorm_verified = true
@@ -98,7 +103,7 @@ GPS 원본 위치 기록
 컬럼
 컬럼	타입	제약조건	역할
 id	BIGINT	PRIMARY KEY, 자동 생성	공동구매 글 고유 ID
-author_id	BIGINT	FK → users.id, NOT NULL	모집자
+author_id	UUID	FK → users.id, NOT NULL	모집자
 product_name	VARCHAR(200)	NOT NULL	상품명
 product_url	TEXT	NULL 가능	상품 판매 페이지 URL
 image_url	TEXT	NULL 가능	상품 이미지 URL
@@ -117,14 +122,14 @@ author_id는 글을 작성한 사용자의 users.id를 저장한다.
 예:
 users
 
-id = 1
+id = Auth UUID
 room_number = "717-1"
 
 해당 사용자가 글을 작성했다면:
 posts
 
 id = 10
-author_id = 1
+author_id = Auth UUID
 product_name = "햇반 24개"
 
 이 된다.
@@ -196,7 +201,7 @@ users와 posts를 연결하는 역할을 한다.
 컬럼	타입	제약조건	역할
 id	BIGINT	PRIMARY KEY, 자동 생성	참여 고유 ID
 post_id	BIGINT	FK → posts.id, NOT NULL	참여한 공동구매
-user_id	BIGINT	FK → users.id, NOT NULL	참여 사용자
+user_id	UUID	FK → users.id, NOT NULL	참여 사용자
 quantity	INTEGER	NOT NULL, 1 이상	참여 수량
 created_at	TIMESTAMPTZ	NOT NULL, DEFAULT NOW()	참여 시각
 
@@ -204,7 +209,7 @@ created_at	TIMESTAMPTZ	NOT NULL, DEFAULT NOW()	참여 시각
 예시
 사용자
 
-users.id = 2
+users.id = Participant Auth UUID
 room_number = "709-2"
 
 이 사용자가:
@@ -216,7 +221,7 @@ participations
 
 id = 1
 post_id = 10
-user_id = 2
+user_id = Participant Auth UUID
 quantity = 4
 
 가 된다.
@@ -345,10 +350,10 @@ Settlement
 사용자
 users
 
-id = 1
+id = Host Auth UUID
 room_number = "717-1"
 
-id = 2
+id = Participant Auth UUID
 room_number = "709-2"
 
 공동구매
@@ -356,7 +361,7 @@ room_number = "709-2"
 posts
 
 id = 10
-author_id = 1
+author_id = Host Auth UUID
 product_name = "햇반 24개"
 total_price = 22900
 total_quantity = 24
@@ -369,7 +374,7 @@ participations
 
 id = 20
 post_id = 10
-user_id = 2
+user_id = Participant Auth UUID
 quantity = 4
 
 정산
@@ -383,7 +388,7 @@ payment_status = "UNPAID"
 
 전체 연결:
 717-1
-users.id = 1
+users.id = Host Auth UUID
 
 ↓ 작성
 
@@ -393,7 +398,7 @@ posts.id = 10
 ↑ 참여
 
 709-2
-users.id = 2
+users.id = Participant Auth UUID
 
 ↓
 

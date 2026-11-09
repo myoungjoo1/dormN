@@ -1,12 +1,14 @@
-from fastapi import APIRouter, HTTPException, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg.rows import dict_row
 
+from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.participations import (
     ParticipationCreateRequest,
     ParticipationResponse,
 )
-from app.development import DEVELOPMENT_PARTICIPANT_USER_ID
 from app.services.recruitment import finalize_recruitment
 
 
@@ -18,7 +20,11 @@ router = APIRouter(prefix="/posts", tags=["participations"])
     response_model=ParticipationResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def join_post(post_id: int, participation: ParticipationCreateRequest):
+def join_post(
+    post_id: int,
+    participation: ParticipationCreateRequest,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
@@ -42,7 +48,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
             if post is None:
                 raise HTTPException(status_code=404, detail="Post not found")
 
-            if post["author_id"] == DEVELOPMENT_PARTICIPANT_USER_ID:
+            if post["author_id"] == current_user_id:
                 raise HTTPException(
                     status_code=409,
                     detail="Post author cannot join own post",
@@ -62,7 +68,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
 
             cursor.execute(
                 "SELECT 1 FROM users WHERE id = %s",
-                (DEVELOPMENT_PARTICIPANT_USER_ID,),
+                (current_user_id,),
             )
             if cursor.fetchone() is None:
                 raise HTTPException(status_code=404, detail="User not found")
@@ -73,7 +79,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
                 FROM participations
                 WHERE post_id = %s AND user_id = %s
                 """,
-                (post_id, DEVELOPMENT_PARTICIPANT_USER_ID),
+                (post_id, current_user_id),
             )
             if cursor.fetchone() is not None:
                 raise HTTPException(
@@ -106,7 +112,7 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
                 VALUES (%s, %s, %s)
                 RETURNING id, post_id, user_id, quantity, created_at
                 """,
-                (post_id, DEVELOPMENT_PARTICIPANT_USER_ID, participation.quantity),
+                (post_id, current_user_id, participation.quantity),
             )
             row = cursor.fetchone()
 
@@ -116,7 +122,10 @@ def join_post(post_id: int, participation: ParticipationCreateRequest):
 
 
 @router.delete("/{post_id}/join", status_code=status.HTTP_204_NO_CONTENT)
-def cancel_join(post_id: int):
+def cancel_join(
+    post_id: int,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
@@ -137,7 +146,7 @@ def cancel_join(post_id: int):
             if post is None:
                 raise HTTPException(status_code=404, detail="Post not found")
 
-            if post["author_id"] == DEVELOPMENT_PARTICIPANT_USER_ID:
+            if post["author_id"] == current_user_id:
                 raise HTTPException(
                     status_code=409,
                     detail="Post author cannot cancel participation",
@@ -161,7 +170,7 @@ def cancel_join(post_id: int):
                 WHERE post_id = %s AND user_id = %s
                 RETURNING id
                 """,
-                (post_id, DEVELOPMENT_PARTICIPANT_USER_ID),
+                (post_id, current_user_id),
             )
             participation = cursor.fetchone()
 

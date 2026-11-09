@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -24,7 +25,7 @@ class PostCreateRequest(BaseModel):
 
 class PostResponse(BaseModel):
     id: int
-    author_id: int
+    author_id: UUID
     product_name: str
     product_url: str | None
     image_url: str | None

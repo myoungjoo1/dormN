@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -15,7 +16,7 @@ class SettlementResponse(BaseModel):
 
 class HostSettlementParticipantResponse(BaseModel):
     settlement_id: int | None
-    user_id: int
+    user_id: UUID
     room_number: str | None
     quantity: int
     amount: int | None

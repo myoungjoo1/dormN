@@ -1,9 +1,14 @@
 import unittest
 from unittest.mock import patch
+from uuid import UUID
 
 from fastapi import HTTPException
 
 from app.routers.settlements import get_host_settlements
+
+
+HOST_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+PARTICIPANT_USER_ID = UUID("00000000-0000-0000-0000-000000000002")
 
 
 class FakeCursor:
@@ -41,7 +46,7 @@ class FakeConnection:
 def participant_row(
     *,
     status="RECRUITING",
-    user_id=4,
+    user_id=PARTICIPANT_USER_ID,
     quantity=4,
     settlement_id=None,
     amount=None,
@@ -51,7 +56,7 @@ def participant_row(
 ):
     return {
         "post_id": 10,
-        "author_id": 1,
+        "author_id": HOST_USER_ID,
         "status": status,
         "total_price": 22900,
         "total_quantity": 24,
@@ -70,7 +75,7 @@ class HostSettlementTest(unittest.TestCase):
     def call_endpoint(self, rows, post_id=10):
         connection = FakeConnection(rows)
         with patch("app.routers.settlements.get_connection", return_value=connection):
-            result = get_host_settlements(post_id)
+            result = get_host_settlements(post_id, HOST_USER_ID)
         return result, connection
 
     def test_host_can_view_recruiting_participants_without_creating_settlements(self):
@@ -87,11 +92,9 @@ class HostSettlementTest(unittest.TestCase):
 
     def test_non_host_gets_forbidden(self):
         connection = FakeConnection([participant_row()])
-        with patch("app.routers.settlements.get_connection", return_value=connection), patch(
-            "app.routers.settlements.DEVELOPMENT_HOST_USER_ID", 4
-        ):
+        with patch("app.routers.settlements.get_connection", return_value=connection):
             with self.assertRaises(HTTPException) as context:
-                get_host_settlements(10)
+                get_host_settlements(10, PARTICIPANT_USER_ID)
 
         self.assertEqual(context.exception.status_code, 403)
 
@@ -99,7 +102,7 @@ class HostSettlementTest(unittest.TestCase):
         connection = FakeConnection([])
         with patch("app.routers.settlements.get_connection", return_value=connection):
             with self.assertRaises(HTTPException) as context:
-                get_host_settlements(999)
+                get_host_settlements(999, HOST_USER_ID)
 
         self.assertEqual(context.exception.status_code, 404)
 
@@ -114,7 +117,7 @@ class HostSettlementTest(unittest.TestCase):
             ),
             participant_row(
                 status="CLOSED",
-                user_id=5,
+                user_id=UUID("00000000-0000-0000-0000-000000000005"),
                 quantity=6,
                 settlement_id=31,
                 amount=5725,
@@ -122,7 +125,7 @@ class HostSettlementTest(unittest.TestCase):
             ),
             participant_row(
                 status="CLOSED",
-                user_id=6,
+                user_id=UUID("00000000-0000-0000-0000-000000000006"),
                 quantity=2,
                 settlement_id=32,
                 amount=1908,

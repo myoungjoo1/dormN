@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg.rows import dict_row
 
+from app.auth import get_current_user_id
 from app.database import get_connection
-from app.development import DEVELOPMENT_HOST_USER_ID
 from app.schemas.posts import PostCreateRequest, PostResponse
 
 
@@ -10,7 +12,10 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 
 
 @router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
-def create_post(post: PostCreateRequest):
+def create_post(
+    post: PostCreateRequest,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -44,7 +49,7 @@ def create_post(post: PostCreateRequest):
                     created_at
                 """,
                 (
-                    DEVELOPMENT_HOST_USER_ID,
+                    current_user_id,
                     post.product_name,
                     post.product_url,
                     post.image_url,

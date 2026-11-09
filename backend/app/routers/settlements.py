@@ -1,11 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
 from psycopg.rows import dict_row
 
+from app.auth import get_current_user_id
 from app.database import get_connection
-from app.development import (
-    DEVELOPMENT_HOST_USER_ID,
-    DEVELOPMENT_PARTICIPANT_USER_ID,
-)
 from app.schemas.settlements import (
     HostSettlementListResponse,
     SettlementResponse,
@@ -30,7 +29,10 @@ SETTLEMENT_COLUMNS = """
     "/posts/{post_id}/settlement/me",
     response_model=SettlementResponse,
 )
-def get_my_settlement(post_id: int):
+def get_my_settlement(
+    post_id: int,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
@@ -40,7 +42,7 @@ def get_my_settlement(post_id: int):
                 JOIN participations AS p ON p.id = s.participation_id
                 WHERE p.post_id = %s AND p.user_id = %s
                 """,
-                (post_id, DEVELOPMENT_PARTICIPANT_USER_ID),
+                (post_id, current_user_id),
             )
             row = cursor.fetchone()
 
@@ -54,7 +56,10 @@ def get_my_settlement(post_id: int):
     "/settlements/{settlement_id}/sent",
     response_model=SettlementResponse,
 )
-def mark_settlement_sent(settlement_id: int):
+def mark_settlement_sent(
+    settlement_id: int,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
@@ -65,7 +70,7 @@ def mark_settlement_sent(settlement_id: int):
                 WHERE s.id = %s AND p.user_id = %s
                 FOR UPDATE OF s
                 """,
-                (settlement_id, DEVELOPMENT_PARTICIPANT_USER_ID),
+                (settlement_id, current_user_id),
             )
             settlement = cursor.fetchone()
 
@@ -96,7 +101,10 @@ def mark_settlement_sent(settlement_id: int):
     "/settlements/{settlement_id}/confirm",
     response_model=SettlementResponse,
 )
-def confirm_settlement(settlement_id: int):
+def confirm_settlement(
+    settlement_id: int,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
@@ -108,7 +116,7 @@ def confirm_settlement(settlement_id: int):
                 WHERE s.id = %s AND post.author_id = %s
                 FOR UPDATE OF s
                 """,
-                (settlement_id, DEVELOPMENT_HOST_USER_ID),
+                (settlement_id, current_user_id),
             )
             settlement = cursor.fetchone()
 
@@ -139,7 +147,10 @@ def confirm_settlement(settlement_id: int):
     "/posts/{post_id}/settlements",
     response_model=HostSettlementListResponse,
 )
-def get_host_settlements(post_id: int):
+def get_host_settlements(
+    post_id: int,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
@@ -173,7 +184,7 @@ def get_host_settlements(post_id: int):
         raise HTTPException(status_code=404, detail="Post not found")
 
     post = rows[0]
-    if post["author_id"] != DEVELOPMENT_HOST_USER_ID:
+    if post["author_id"] != current_user_id:
         raise HTTPException(
             status_code=403,
             detail="Only the post author can view settlements",
