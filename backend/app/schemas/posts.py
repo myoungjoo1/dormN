@@ -37,3 +37,10 @@ class PostResponse(BaseModel):
     shortfall_policy: str
     status: str
     created_at: datetime
+
+
+class PostRecruitmentResponse(PostResponse):
+    author_room_number: str | None
+    joined_quantity: int
+    remaining_quantity: int
+    participant_count: int

@@ -6,7 +6,11 @@ from psycopg.rows import dict_row
 from app.api import ApiException, ApiResponse
 from app.auth import get_current_user_id
 from app.database import get_connection
-from app.schemas.posts import PostCreateRequest, PostResponse
+from app.schemas.posts import (
+    PostCreateRequest,
+    PostRecruitmentResponse,
+    PostResponse,
+)
 
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -89,7 +93,7 @@ def create_post(
 
 @router.get(
     "",
-    response_model=ApiResponse[list[PostResponse]],
+    response_model=ApiResponse[list[PostRecruitmentResponse]],
     status_code=status.HTTP_200_OK,
 )
 def get_posts():
@@ -98,50 +102,72 @@ def get_posts():
             cursor.execute(
                 """
                 SELECT
-                    id,
-                    author_id,
-                    product_name,
-                    product_url,
-                    image_url,
-                    total_price,
-                    total_quantity,
-                    host_quantity,
-                    deadline,
-                    pickup_location,
-                    shortfall_policy,
-                    status,
-                    created_at
-                FROM posts
-                ORDER BY created_at DESC
+                    p.id,
+                    p.author_id,
+                    p.product_name,
+                    p.product_url,
+                    p.image_url,
+                    p.total_price,
+                    p.total_quantity,
+                    p.host_quantity,
+                    p.deadline,
+                    p.pickup_location,
+                    p.shortfall_policy,
+                    p.status,
+                    p.created_at,
+                    u.room_number AS author_room_number,
+                    COALESCE(SUM(part.quantity), 0)::INTEGER AS joined_quantity,
+                    (
+                        p.total_quantity
+                        - p.host_quantity
+                        - COALESCE(SUM(part.quantity), 0)
+                    )::INTEGER AS remaining_quantity,
+                    COUNT(part.id)::INTEGER AS participant_count
+                FROM public.posts AS p
+                JOIN public.users AS u ON u.id = p.author_id
+                LEFT JOIN public.participations AS part ON part.post_id = p.id
+                GROUP BY p.id, u.room_number
+                ORDER BY p.created_at DESC
                 """
             )
             rows = cursor.fetchall()
 
-    return {"data": [PostResponse.model_validate(row) for row in rows]}
+    return {"data": [PostRecruitmentResponse.model_validate(row) for row in rows]}
 
 
-@router.get("/{post_id}", response_model=ApiResponse[PostResponse])
+@router.get("/{post_id}", response_model=ApiResponse[PostRecruitmentResponse])
 def get_post(post_id: int):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 """
                 SELECT
-                    id,
-                    author_id,
-                    product_name,
-                    product_url,
-                    image_url,
-                    total_price,
-                    total_quantity,
-                    host_quantity,
-                    deadline,
-                    pickup_location,
-                    shortfall_policy,
-                    status,
-                    created_at
-                FROM posts
-                WHERE id = %s
+                    p.id,
+                    p.author_id,
+                    p.product_name,
+                    p.product_url,
+                    p.image_url,
+                    p.total_price,
+                    p.total_quantity,
+                    p.host_quantity,
+                    p.deadline,
+                    p.pickup_location,
+                    p.shortfall_policy,
+                    p.status,
+                    p.created_at,
+                    u.room_number AS author_room_number,
+                    COALESCE(SUM(part.quantity), 0)::INTEGER AS joined_quantity,
+                    (
+                        p.total_quantity
+                        - p.host_quantity
+                        - COALESCE(SUM(part.quantity), 0)
+                    )::INTEGER AS remaining_quantity,
+                    COUNT(part.id)::INTEGER AS participant_count
+                FROM public.posts AS p
+                JOIN public.users AS u ON u.id = p.author_id
+                LEFT JOIN public.participations AS part ON part.post_id = p.id
+                WHERE p.id = %s
+                GROUP BY p.id, u.room_number
                 """,
                 (post_id,),
             )
@@ -150,4 +176,4 @@ def get_post(post_id: int):
     if row is None:
         raise ApiException(404, "POST_NOT_FOUND", "Post not found")
 
-    return {"data": PostResponse.model_validate(row)}
+    return {"data": PostRecruitmentResponse.model_validate(row)}

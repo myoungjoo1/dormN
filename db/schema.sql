@@ -12,7 +12,9 @@ CREATE TABLE public.users (
 
     kakao_id TEXT UNIQUE,
 
-    room_number VARCHAR(20) UNIQUE,
+    room_number VARCHAR(20) UNIQUE
+        CONSTRAINT users_room_number_format_check
+        CHECK (room_number ~ '^[0-9]{3,4}-[1-9][0-9]*$'),
 
     dorm_verified BOOLEAN NOT NULL DEFAULT FALSE,
 
