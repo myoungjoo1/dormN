@@ -33,7 +33,10 @@ class DormNApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'DormN',
-      theme: ThemeData(colorScheme: .fromSeed(seedColor: Colors.indigo)),
+      theme: ThemeData(
+        colorScheme: .fromSeed(seedColor: const Color(0xFF3156D9)),
+        scaffoldBackgroundColor: const Color(0xFFF7F8FC),
+      ),
       home: isSupabaseConfigured
           ? const AuthGate()
           : const ConfigurationPage(),
