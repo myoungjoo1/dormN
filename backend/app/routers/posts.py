@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from psycopg.rows import dict_row
 
+from app.api import ApiException, ApiResponse
 from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.posts import PostCreateRequest, PostResponse
@@ -11,7 +12,11 @@ from app.schemas.posts import PostCreateRequest, PostResponse
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 
-@router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ApiResponse[PostResponse],
+    status_code=status.HTTP_201_CREATED,
+)
 def create_post(
     post: PostCreateRequest,
     current_user_id: UUID = Depends(get_current_user_id),
@@ -64,23 +69,29 @@ def create_post(
             row = cursor.fetchone()
 
     return {
-        "id": row[0],
-        "author_id": row[1],
-        "product_name": row[2],
-        "product_url": row[3],
-        "image_url": row[4],
-        "total_price": row[5],
-        "total_quantity": row[6],
-        "host_quantity": row[7],
-        "deadline": row[8],
-        "pickup_location": row[9],
-        "shortfall_policy": row[10],
-        "status": row[11],
-        "created_at": row[12],
+        "data": {
+            "id": row[0],
+            "author_id": row[1],
+            "product_name": row[2],
+            "product_url": row[3],
+            "image_url": row[4],
+            "total_price": row[5],
+            "total_quantity": row[6],
+            "host_quantity": row[7],
+            "deadline": row[8],
+            "pickup_location": row[9],
+            "shortfall_policy": row[10],
+            "status": row[11],
+            "created_at": row[12],
+        }
     }
 
 
-@router.get("", response_model=list[PostResponse], status_code=status.HTTP_200_OK)
+@router.get(
+    "",
+    response_model=ApiResponse[list[PostResponse]],
+    status_code=status.HTTP_200_OK,
+)
 def get_posts():
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
@@ -106,10 +117,10 @@ def get_posts():
             )
             rows = cursor.fetchall()
 
-    return [PostResponse.model_validate(row) for row in rows]
+    return {"data": [PostResponse.model_validate(row) for row in rows]}
 
 
-@router.get("/{post_id}", response_model=PostResponse)
+@router.get("/{post_id}", response_model=ApiResponse[PostResponse])
 def get_post(post_id: int):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
@@ -137,6 +148,6 @@ def get_post(post_id: int):
             row = cursor.fetchone()
 
     if row is None:
-        raise HTTPException(status_code=404, detail="Post not found")
+        raise ApiException(404, "POST_NOT_FOUND", "Post not found")
 
-    return PostResponse.model_validate(row)
+    return {"data": PostResponse.model_validate(row)}

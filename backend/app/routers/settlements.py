@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from psycopg.rows import dict_row
 
+from app.api import ApiException, ApiResponse
 from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.settlements import (
@@ -27,7 +28,7 @@ SETTLEMENT_COLUMNS = """
 
 @router.get(
     "/posts/{post_id}/settlement/me",
-    response_model=SettlementResponse,
+    response_model=ApiResponse[SettlementResponse],
 )
 def get_my_settlement(
     post_id: int,
@@ -47,14 +48,14 @@ def get_my_settlement(
             row = cursor.fetchone()
 
     if row is None:
-        raise HTTPException(status_code=404, detail="Settlement not found")
+        raise ApiException(404, "SETTLEMENT_NOT_FOUND", "Settlement not found")
 
-    return SettlementResponse.model_validate(row)
+    return {"data": SettlementResponse.model_validate(row)}
 
 
 @router.post(
     "/settlements/{settlement_id}/sent",
-    response_model=SettlementResponse,
+    response_model=ApiResponse[SettlementResponse],
 )
 def mark_settlement_sent(
     settlement_id: int,
@@ -75,12 +76,17 @@ def mark_settlement_sent(
             settlement = cursor.fetchone()
 
             if settlement is None:
-                raise HTTPException(status_code=404, detail="Settlement not found")
+                raise ApiException(
+                    404,
+                    "SETTLEMENT_NOT_FOUND",
+                    "Settlement not found",
+                )
 
             if settlement["payment_status"] != "UNPAID":
-                raise HTTPException(
-                    status_code=409,
-                    detail="Settlement is not unpaid",
+                raise ApiException(
+                    409,
+                    "SETTLEMENT_NOT_UNPAID",
+                    "Settlement is not unpaid",
                 )
 
             cursor.execute(
@@ -94,12 +100,12 @@ def mark_settlement_sent(
             )
             row = cursor.fetchone()
 
-    return SettlementResponse.model_validate(row)
+    return {"data": SettlementResponse.model_validate(row)}
 
 
 @router.post(
     "/settlements/{settlement_id}/confirm",
-    response_model=SettlementResponse,
+    response_model=ApiResponse[SettlementResponse],
 )
 def confirm_settlement(
     settlement_id: int,
@@ -121,12 +127,17 @@ def confirm_settlement(
             settlement = cursor.fetchone()
 
             if settlement is None:
-                raise HTTPException(status_code=404, detail="Settlement not found")
+                raise ApiException(
+                    404,
+                    "SETTLEMENT_NOT_FOUND",
+                    "Settlement not found",
+                )
 
             if settlement["payment_status"] != "SENT":
-                raise HTTPException(
-                    status_code=409,
-                    detail="Settlement is not sent",
+                raise ApiException(
+                    409,
+                    "SETTLEMENT_NOT_SENT",
+                    "Settlement is not sent",
                 )
 
             cursor.execute(
@@ -140,12 +151,12 @@ def confirm_settlement(
             )
             row = cursor.fetchone()
 
-    return SettlementResponse.model_validate(row)
+    return {"data": SettlementResponse.model_validate(row)}
 
 
 @router.get(
     "/posts/{post_id}/settlements",
-    response_model=HostSettlementListResponse,
+    response_model=ApiResponse[HostSettlementListResponse],
 )
 def get_host_settlements(
     post_id: int,
@@ -181,13 +192,14 @@ def get_host_settlements(
             rows = cursor.fetchall()
 
     if not rows:
-        raise HTTPException(status_code=404, detail="Post not found")
+        raise ApiException(404, "POST_NOT_FOUND", "Post not found")
 
     post = rows[0]
     if post["author_id"] != current_user_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Only the post author can view settlements",
+        raise ApiException(
+            403,
+            "POST_AUTHOR_REQUIRED",
+            "Only the post author can view settlements",
         )
 
     participants = []
@@ -238,12 +250,14 @@ def get_host_settlements(
         participant_total_amount = 0
 
     return {
-        "post_id": post["post_id"],
-        "status": post["status"],
-        "total_price": post["total_price"],
-        "participant_total_amount": participant_total_amount,
-        "host_amount": post["total_price"] - participant_total_amount
-        if post["status"] != "CANCELLED"
-        else 0,
-        "participants": participants,
+        "data": {
+            "post_id": post["post_id"],
+            "status": post["status"],
+            "total_price": post["total_price"],
+            "participant_total_amount": participant_total_amount,
+            "host_amount": post["total_price"] - participant_total_amount
+            if post["status"] != "CANCELLED"
+            else 0,
+            "participants": participants,
+        }
     }

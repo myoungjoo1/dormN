@@ -163,7 +163,7 @@ class HostSettlementSupabaseIntegrationTest(unittest.TestCase):
         recruiting = get_host_settlements(
             recruiting_post_id,
             DEVELOPMENT_HOST_USER_ID,
-        )
+        )["data"]
         self.assertEqual(recruiting["participants"][0]["amount"], 3816)
         self.assertIsNone(recruiting["participants"][0]["settlement_id"])
         self.assertIsNone(recruiting["participants"][0]["payment_status"])
@@ -183,7 +183,9 @@ class HostSettlementSupabaseIntegrationTest(unittest.TestCase):
                 )
                 self.assertEqual(cursor.fetchone()[0], 0)
 
-        closed = get_host_settlements(closed_post_id, DEVELOPMENT_HOST_USER_ID)
+        closed = get_host_settlements(closed_post_id, DEVELOPMENT_HOST_USER_ID)[
+            "data"
+        ]
         self.assertEqual(
             [participant["payment_status"] for participant in closed["participants"]],
             ["UNPAID", "SENT", "CONFIRMED"],
@@ -191,7 +193,10 @@ class HostSettlementSupabaseIntegrationTest(unittest.TestCase):
         self.assertEqual(closed["participant_total_amount"], 11449)
         self.assertEqual(closed["host_amount"], 11451)
 
-        cancelled = get_host_settlements(cancelled_post_id, DEVELOPMENT_HOST_USER_ID)
+        cancelled = get_host_settlements(
+            cancelled_post_id,
+            DEVELOPMENT_HOST_USER_ID,
+        )["data"]
         self.assertIsNone(cancelled["participants"][0]["amount"])
         self.assertIsNone(cancelled["participants"][0]["payment_status"])
         self.assertEqual(cancelled["participant_total_amount"], 0)
@@ -203,10 +208,12 @@ class HostSettlementSupabaseIntegrationTest(unittest.TestCase):
                 DEVELOPMENT_PARTICIPANT_USER_ID,
             )
         self.assertEqual(forbidden_context.exception.status_code, 403)
+        self.assertEqual(forbidden_context.exception.code, "POST_AUTHOR_REQUIRED")
 
         with self.assertRaises(HTTPException) as missing_context:
             get_host_settlements(9999999999, DEVELOPMENT_HOST_USER_ID)
         self.assertEqual(missing_context.exception.status_code, 404)
+        self.assertEqual(missing_context.exception.code, "POST_NOT_FOUND")
 
     def tearDown(self):
         with get_connection() as conn:

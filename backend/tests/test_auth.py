@@ -55,6 +55,7 @@ class AuthTest(unittest.TestCase):
             get_current_user_id(None)
 
         self.assertEqual(context.exception.status_code, 401)
+        self.assertEqual(context.exception.code, "AUTH_REQUIRED")
 
     def test_valid_token_returns_uuid_and_creates_profile(self):
         connection = FakeConnection()

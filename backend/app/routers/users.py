@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from psycopg.rows import dict_row
 
+from app.api import ApiException, ApiResponse
 from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.users import UserResponse
@@ -11,7 +12,7 @@ from app.schemas.users import UserResponse
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=ApiResponse[UserResponse])
 def get_me(current_user_id: UUID = Depends(get_current_user_id)):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
@@ -26,6 +27,6 @@ def get_me(current_user_id: UUID = Depends(get_current_user_id)):
             row = cursor.fetchone()
 
     if row is None:
-        raise HTTPException(status_code=404, detail="User profile not found")
+        raise ApiException(404, "USER_PROFILE_NOT_FOUND", "User profile not found")
 
-    return UserResponse.model_validate(row)
+    return {"data": UserResponse.model_validate(row)}

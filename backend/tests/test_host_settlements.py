@@ -75,7 +75,7 @@ class HostSettlementTest(unittest.TestCase):
     def call_endpoint(self, rows, post_id=10):
         connection = FakeConnection(rows)
         with patch("app.routers.settlements.get_connection", return_value=connection):
-            result = get_host_settlements(post_id, HOST_USER_ID)
+            result = get_host_settlements(post_id, HOST_USER_ID)["data"]
         return result, connection
 
     def test_host_can_view_recruiting_participants_without_creating_settlements(self):
@@ -97,6 +97,7 @@ class HostSettlementTest(unittest.TestCase):
                 get_host_settlements(10, PARTICIPANT_USER_ID)
 
         self.assertEqual(context.exception.status_code, 403)
+        self.assertEqual(context.exception.code, "POST_AUTHOR_REQUIRED")
 
     def test_missing_post_returns_not_found(self):
         connection = FakeConnection([])
@@ -105,6 +106,7 @@ class HostSettlementTest(unittest.TestCase):
                 get_host_settlements(999, HOST_USER_ID)
 
         self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(context.exception.code, "POST_NOT_FOUND")
 
     def test_closed_returns_saved_settlement_statuses_and_host_amount(self):
         rows = [

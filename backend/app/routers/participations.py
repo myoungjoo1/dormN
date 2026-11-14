@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from psycopg.rows import dict_row
 
+from app.api import ApiException, ApiResponse
 from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.participations import (
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/posts", tags=["participations"])
 
 @router.post(
     "/{post_id}/join",
-    response_model=ParticipationResponse,
+    response_model=ApiResponse[ParticipationResponse],
     status_code=status.HTTP_201_CREATED,
 )
 def join_post(
@@ -46,24 +47,27 @@ def join_post(
             post = cursor.fetchone()
 
             if post is None:
-                raise HTTPException(status_code=404, detail="Post not found")
+                raise ApiException(404, "POST_NOT_FOUND", "Post not found")
 
             if post["author_id"] == current_user_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Post author cannot join own post",
+                raise ApiException(
+                    409,
+                    "POST_AUTHOR_CANNOT_JOIN",
+                    "Post author cannot join own post",
                 )
 
             if post["status"] != "RECRUITING":
-                raise HTTPException(
-                    status_code=409,
-                    detail="Post is not recruiting",
+                raise ApiException(
+                    409,
+                    "POST_NOT_RECRUITING",
+                    "Post is not recruiting",
                 )
 
             if post["deadline_expired"]:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Post recruitment deadline has passed",
+                raise ApiException(
+                    409,
+                    "RECRUITMENT_DEADLINE_PASSED",
+                    "Post recruitment deadline has passed",
                 )
 
             cursor.execute(
@@ -71,7 +75,7 @@ def join_post(
                 (current_user_id,),
             )
             if cursor.fetchone() is None:
-                raise HTTPException(status_code=404, detail="User not found")
+                raise ApiException(404, "USER_NOT_FOUND", "User not found")
 
             cursor.execute(
                 """
@@ -82,9 +86,10 @@ def join_post(
                 (post_id, current_user_id),
             )
             if cursor.fetchone() is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail="User has already joined this post",
+                raise ApiException(
+                    409,
+                    "PARTICIPATION_ALREADY_EXISTS",
+                    "User has already joined this post",
                 )
 
             cursor.execute(
@@ -101,9 +106,10 @@ def join_post(
             )
 
             if participation.quantity > remaining_quantity:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Not enough quantity remaining",
+                raise ApiException(
+                    409,
+                    "INSUFFICIENT_QUANTITY",
+                    "Not enough quantity remaining",
                 )
 
             cursor.execute(
@@ -118,7 +124,7 @@ def join_post(
 
         finalize_recruitment(conn, post_id)
 
-    return ParticipationResponse.model_validate(row)
+    return {"data": ParticipationResponse.model_validate(row)}
 
 
 @router.delete("/{post_id}/join", status_code=status.HTTP_204_NO_CONTENT)
@@ -144,24 +150,27 @@ def cancel_join(
             post = cursor.fetchone()
 
             if post is None:
-                raise HTTPException(status_code=404, detail="Post not found")
+                raise ApiException(404, "POST_NOT_FOUND", "Post not found")
 
             if post["author_id"] == current_user_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Post author cannot cancel participation",
+                raise ApiException(
+                    409,
+                    "POST_AUTHOR_CANNOT_CANCEL_PARTICIPATION",
+                    "Post author cannot cancel participation",
                 )
 
             if post["status"] != "RECRUITING":
-                raise HTTPException(
-                    status_code=409,
-                    detail="Post is not recruiting",
+                raise ApiException(
+                    409,
+                    "POST_NOT_RECRUITING",
+                    "Post is not recruiting",
                 )
 
             if post["deadline_expired"]:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Post recruitment deadline has passed",
+                raise ApiException(
+                    409,
+                    "RECRUITMENT_DEADLINE_PASSED",
+                    "Post recruitment deadline has passed",
                 )
 
             cursor.execute(
@@ -175,7 +184,8 @@ def cancel_join(
             participation = cursor.fetchone()
 
             if participation is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Participation not found",
+                raise ApiException(
+                    404,
+                    "PARTICIPATION_NOT_FOUND",
+                    "Participation not found",
                 )
