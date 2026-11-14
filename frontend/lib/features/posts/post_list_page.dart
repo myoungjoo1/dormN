@@ -132,12 +132,7 @@ class _PostListPageState extends State<PostListPage> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            _FeedTopBar(onSignOut: _supabase.auth.signOut),
-            Expanded(child: _buildFeed()),
-          ],
-        ),
+        child: _buildFeed(),
       ),
     );
   }
@@ -200,69 +195,6 @@ class _PostListPageState extends State<PostListPage> {
   }
 }
 
-class _FeedTopBar extends StatelessWidget {
-  const _FeedTopBar({required this.onSignOut});
-
-  final Future<void> Function() onSignOut;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE9ECF5))),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.circle, size: 9, color: _blue),
-          const SizedBox(width: 5),
-          const Text(
-            'Dorm Feed',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
-          ),
-          const SizedBox(width: 8),
-          const _BuildingChip(),
-          const Spacer(),
-          const Icon(Icons.search, color: Color(0xFF4E5568)),
-          const SizedBox(width: 20),
-          const Icon(Icons.notifications_none, color: Color(0xFF4E5568)),
-          const SizedBox(width: 12),
-          InkWell(
-            borderRadius: BorderRadius.circular(22),
-            onTap: onSignOut,
-            child: const CircleAvatar(
-              radius: 17,
-              backgroundColor: _blue,
-              child: Icon(Icons.person, color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BuildingChip extends StatelessWidget {
-  const _BuildingChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F2F8),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: const Text(
-        '기숙사 A동',
-        style: TextStyle(fontSize: 10, color: Color(0xFF687086)),
-      ),
-    );
-  }
-}
-
 class _FeedTitle extends StatelessWidget {
   const _FeedTitle({required this.roomNumber});
 
@@ -312,7 +244,7 @@ class _TogetherBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 100,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 13, 14, 13),
       decoration: BoxDecoration(
         color: const Color(0xFFE9EEFF),
         borderRadius: BorderRadius.circular(14),
@@ -323,19 +255,33 @@ class _TogetherBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '♧ 실시간 룸메이트 나눔',
-                  style: TextStyle(color: _blue, fontSize: 11),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.whatshot_outlined, size: 13, color: _blue),
+                    SizedBox(width: 4),
+                    Text(
+                      '실시간 룸메이트 나눔',
+                      style: TextStyle(color: _blue, fontSize: 11),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 6),
+                SizedBox(height: 4),
                 Text(
                   '오늘 같이 살 사람?',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                 ),
-                SizedBox(height: 3),
-                Text(
-                  '수경재 공동구매 배송비 아끼고\n달거로 득템해요',
-                  style: TextStyle(color: _blue, fontSize: 11),
+                SizedBox(height: 4),
+                SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    alignment: Alignment.centerLeft,
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '수경재 공동구매 배송비 아끼고 날거로 득템해요',
+                      style: TextStyle(color: _blue, fontSize: 11),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -371,6 +317,7 @@ class _FilterRow extends StatelessWidget {
             label: Text(filters[index]),
             selected: selectedFilter == index,
             selectedColor: _blue,
+            showCheckmark: false,
             labelStyle: TextStyle(
               color: selectedFilter == index
                   ? Colors.white
