@@ -117,6 +117,13 @@ class ParticipationQuoteTest(unittest.TestCase):
 
         self.assertEqual(context.exception.code, "INSUFFICIENT_QUANTITY")
 
+    def test_direct_participation_cancellation_is_not_exposed(self):
+        from app.main import app
+
+        join_operations = app.openapi()["paths"]["/posts/{post_id}/join"]
+
+        self.assertNotIn("delete", join_operations)
+
 
 if __name__ == "__main__":
     unittest.main()
