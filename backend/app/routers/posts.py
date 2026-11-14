@@ -10,10 +10,18 @@ from app.schemas.posts import (
     PostCreateRequest,
     PostRecruitmentResponse,
     PostResponse,
+    PostStatusUpdateRequest,
 )
 
 
 router = APIRouter(prefix="/posts", tags=["posts"])
+
+POST_STATUS_TRANSITIONS = {
+    "CLOSED": "ORDERED",
+    "ORDERED": "ARRIVED",
+    "ARRIVED": "PICKUP",
+    "PICKUP": "COMPLETED",
+}
 
 
 @router.post(
@@ -89,6 +97,108 @@ def create_post(
             "created_at": row[12],
         }
     }
+
+
+@router.patch("/{post_id}/status", response_model=ApiResponse[PostResponse])
+def update_post_status(
+    post_id: int,
+    status_update: PostStatusUpdateRequest,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    author_id,
+                    product_name,
+                    product_url,
+                    image_url,
+                    total_price,
+                    total_quantity,
+                    host_quantity,
+                    deadline,
+                    pickup_location,
+                    shortfall_policy,
+                    status,
+                    created_at
+                FROM public.posts
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (post_id,),
+            )
+            post = cursor.fetchone()
+
+            if post is None:
+                raise ApiException(404, "POST_NOT_FOUND", "Post not found")
+
+            if post["author_id"] != current_user_id:
+                raise ApiException(
+                    403,
+                    "POST_AUTHOR_REQUIRED",
+                    "Only the post author can change its status",
+                )
+
+            expected_status = POST_STATUS_TRANSITIONS.get(post["status"])
+            if status_update.status != expected_status:
+                raise ApiException(
+                    409,
+                    "INVALID_POST_STATUS_TRANSITION",
+                    (
+                        f"Cannot transition post from {post['status']} "
+                        f"to {status_update.status}"
+                    ),
+                )
+
+            if post["status"] == "CLOSED":
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) AS pending_count
+                    FROM public.participations AS p
+                    LEFT JOIN public.settlements AS s
+                        ON s.participation_id = p.id
+                    WHERE p.post_id = %s
+                      AND (
+                          s.id IS NULL
+                          OR s.payment_status != 'CONFIRMED'
+                      )
+                    """,
+                    (post_id,),
+                )
+                if cursor.fetchone()["pending_count"] > 0:
+                    raise ApiException(
+                        409,
+                        "SETTLEMENTS_NOT_CONFIRMED",
+                        "All participant settlements must be confirmed",
+                    )
+
+            cursor.execute(
+                """
+                UPDATE public.posts
+                SET status = %s
+                WHERE id = %s
+                RETURNING
+                    id,
+                    author_id,
+                    product_name,
+                    product_url,
+                    image_url,
+                    total_price,
+                    total_quantity,
+                    host_quantity,
+                    deadline,
+                    pickup_location,
+                    shortfall_policy,
+                    status,
+                    created_at
+                """,
+                (status_update.status, post_id),
+            )
+            updated_post = cursor.fetchone()
+
+    return {"data": PostResponse.model_validate(updated_post)}
 
 
 @router.get(

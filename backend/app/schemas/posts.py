@@ -23,6 +23,10 @@ class PostCreateRequest(BaseModel):
         return self
 
 
+class PostStatusUpdateRequest(BaseModel):
+    status: Literal["ORDERED", "ARRIVED", "PICKUP", "COMPLETED"]
+
+
 class PostResponse(BaseModel):
     id: int
     author_id: UUID
