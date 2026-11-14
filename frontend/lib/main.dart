@@ -2,12 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabasePublishableKey =
     String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
 const kakaoRedirectUrl = 'io.dormn.app://login-callback';
+const apiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: 'http://10.0.2.2:8000',
+);
 
 bool get isSupabaseConfigured =>
     supabaseUrl.isNotEmpty && supabasePublishableKey.isNotEmpty;
@@ -142,8 +147,46 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-class AccountPage extends StatelessWidget {
+class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
+
+  @override
+  State<AccountPage> createState() => _AccountPageState();
+}
+
+class _AccountPageState extends State<AccountPage> {
+  String _serverMessage = 'FastAPI 사용자 정보 확인 중...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMyProfile();
+  }
+
+  Future<void> _loadMyProfile() async {
+    final session = supabase.auth.currentSession;
+    if (session == null) {
+      setState(() => _serverMessage = 'Supabase 로그인 세션이 없습니다.');
+      return;
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/users/me'),
+        headers: {'Authorization': 'Bearer ${session.accessToken}'},
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _serverMessage = response.statusCode == 200
+            ? 'FastAPI 연결 성공\n${response.body}'
+            : 'FastAPI 응답 오류 (${response.statusCode})\n${response.body}';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _serverMessage = 'FastAPI 연결 실패\n$error');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -158,6 +201,8 @@ class AccountPage extends StatelessWidget {
             const Text('카카오 로그인이 완료되었습니다.'),
             const SizedBox(height: 8),
             Text(user?.id ?? '사용자 UUID 없음'),
+            const SizedBox(height: 24),
+            Text(_serverMessage),
             const SizedBox(height: 24),
             OutlinedButton(
               onPressed: () => supabase.auth.signOut(),
