@@ -8,12 +8,116 @@ from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.participations import (
     ParticipationCreateRequest,
+    ParticipationQuoteResponse,
     ParticipationResponse,
 )
-from app.services.recruitment import finalize_recruitment
+from app.services.recruitment import (
+    calculate_settlement_amount,
+    finalize_recruitment,
+)
 
 
 router = APIRouter(prefix="/posts", tags=["participations"])
+
+
+def _validate_post_for_participation(post, current_user_id: UUID):
+    if post is None:
+        raise ApiException(404, "POST_NOT_FOUND", "Post not found")
+
+    if post["author_id"] == current_user_id:
+        raise ApiException(
+            409,
+            "POST_AUTHOR_CANNOT_JOIN",
+            "Post author cannot join own post",
+        )
+
+    if post["status"] != "RECRUITING":
+        raise ApiException(
+            409,
+            "POST_NOT_RECRUITING",
+            "Post is not recruiting",
+        )
+
+    if post["deadline_expired"]:
+        raise ApiException(
+            409,
+            "RECRUITMENT_DEADLINE_PASSED",
+            "Post recruitment deadline has passed",
+        )
+
+
+@router.post(
+    "/{post_id}/quote",
+    response_model=ApiResponse[ParticipationQuoteResponse],
+)
+def quote_participation(
+    post_id: int,
+    participation: ParticipationCreateRequest,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    p.id,
+                    p.author_id,
+                    p.status,
+                    p.total_price,
+                    p.total_quantity,
+                    p.host_quantity,
+                    p.deadline <= NOW() AS deadline_expired,
+                    EXISTS (
+                        SELECT 1
+                        FROM public.participations AS own_participation
+                        WHERE own_participation.post_id = p.id
+                          AND own_participation.user_id = %s
+                    ) AS already_joined,
+                    COALESCE((
+                        SELECT SUM(all_participations.quantity)
+                        FROM public.participations AS all_participations
+                        WHERE all_participations.post_id = p.id
+                    ), 0) AS joined_quantity
+                FROM public.posts AS p
+                WHERE p.id = %s
+                """,
+                (current_user_id, post_id),
+            )
+            post = cursor.fetchone()
+
+    _validate_post_for_participation(post, current_user_id)
+
+    if post["already_joined"]:
+        raise ApiException(
+            409,
+            "PARTICIPATION_ALREADY_EXISTS",
+            "User has already joined this post",
+        )
+
+    remaining_quantity = (
+        post["total_quantity"] - post["host_quantity"] - post["joined_quantity"]
+    )
+    if participation.quantity > remaining_quantity:
+        raise ApiException(
+            409,
+            "INSUFFICIENT_QUANTITY",
+            "Not enough quantity remaining",
+        )
+
+    return {
+        "data": ParticipationQuoteResponse(
+            post_id=post_id,
+            quantity=participation.quantity,
+            estimated_amount=calculate_settlement_amount(
+                post["total_price"],
+                participation.quantity,
+                post["total_quantity"],
+            ),
+            remaining_quantity_after_join=(
+                remaining_quantity - participation.quantity
+            ),
+        )
+    }
 
 
 @router.post(
@@ -46,29 +150,7 @@ def join_post(
             )
             post = cursor.fetchone()
 
-            if post is None:
-                raise ApiException(404, "POST_NOT_FOUND", "Post not found")
-
-            if post["author_id"] == current_user_id:
-                raise ApiException(
-                    409,
-                    "POST_AUTHOR_CANNOT_JOIN",
-                    "Post author cannot join own post",
-                )
-
-            if post["status"] != "RECRUITING":
-                raise ApiException(
-                    409,
-                    "POST_NOT_RECRUITING",
-                    "Post is not recruiting",
-                )
-
-            if post["deadline_expired"]:
-                raise ApiException(
-                    409,
-                    "RECRUITMENT_DEADLINE_PASSED",
-                    "Post recruitment deadline has passed",
-                )
+            _validate_post_for_participation(post, current_user_id)
 
             cursor.execute(
                 "SELECT 1 FROM users WHERE id = %s",
