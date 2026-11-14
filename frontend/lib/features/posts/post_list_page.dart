@@ -1,24 +1,21 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const apiBaseUrl = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://10.0.2.2:8000',
-);
+import '../../core/api/api_exception.dart';
+import '../../core/api/dormn_api.dart';
+import '../../models/post.dart';
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+class PostListPage extends StatefulWidget {
+  const PostListPage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<PostListPage> createState() => _PostListPageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _PostListPageState extends State<PostListPage> {
+  final _api = const DormNApi();
   String _serverMessage = 'FastAPI 사용자 정보 확인 중...';
-  List<Map<String, dynamic>> _posts = [];
+  List<Post> _posts = [];
   String? _postsError;
   bool _isPostsLoading = true;
 
@@ -39,22 +36,16 @@ class _HomePageState extends State<HomePage> {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/users/me'),
-        headers: {'Authorization': 'Bearer ${session.accessToken}'},
-      );
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-
+      final profile = await _api.getMyProfile(session.accessToken);
       if (!mounted) return;
       setState(() {
-        if (response.statusCode == 200) {
-          final profile = body['data'] as Map<String, dynamic>;
-          _serverMessage = 'FastAPI 연결 성공\n사용자: ${profile['id']}';
-        } else {
-          final apiError = body['error'] as Map<String, dynamic>;
-          _serverMessage =
-              'FastAPI 응답 오류 (${response.statusCode})\n${apiError['message']}';
-        }
+        _serverMessage = 'FastAPI 연결 성공\n사용자: ${profile.id}';
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _serverMessage =
+            'FastAPI 응답 오류 (${error.statusCode})\n${error.message}';
       });
     } catch (error) {
       if (!mounted) return;
@@ -69,26 +60,17 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      final response = await http.get(Uri.parse('$apiBaseUrl/posts'));
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final posts = await _api.getPosts();
       if (!mounted) return;
-
-      if (response.statusCode != 200) {
-        final apiError = body['error'] as Map<String, dynamic>;
-        setState(() {
-          _isPostsLoading = false;
-          _postsError = apiError['message']?.toString() ??
-              '공동구매 목록을 불러오지 못했습니다. (${response.statusCode})';
-        });
-        return;
-      }
-
-      final decoded = body['data'] as List<dynamic>;
       setState(() {
         _isPostsLoading = false;
-        _posts = decoded
-            .map((post) => Map<String, dynamic>.from(post as Map))
-            .toList();
+        _posts = posts;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isPostsLoading = false;
+        _postsError = error.message;
       });
     } catch (error) {
       if (!mounted) return;
@@ -178,12 +160,13 @@ class _HomePageState extends State<HomePage> {
           final post = _posts[index];
           return Card(
             child: ListTile(
-              title: Text(post['product_name']?.toString() ?? '상품명 없음'),
+              title: Text(post.productName),
               subtitle: Text(
-                '${post['total_price']}원 · ${post['pickup_location']}\n'
-                '마감: ${post['deadline']}',
+                '${post.authorRoomNumber ?? '호실 미등록'} · ${post.pickupLocation}\n'
+                '${post.filledQuantity}/${post.totalQuantity}개 참여 · '
+                '${post.remainingQuantity}개 남음',
               ),
-              trailing: Text(post['status']?.toString() ?? ''),
+              trailing: Text(post.status),
             ),
           );
         },

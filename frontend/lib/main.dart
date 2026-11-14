@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'screens/home_page.dart';
-import 'screens/login_page.dart';
+import 'features/auth/login_page.dart';
+import 'features/posts/post_list_page.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabasePublishableKey =
@@ -93,6 +93,6 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
-    return _session == null ? const LoginPage() : const HomePage();
+    return _session == null ? const LoginPage() : const PostListPage();
   }
 }
