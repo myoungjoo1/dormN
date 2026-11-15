@@ -48,13 +48,13 @@ class FakeConnection:
         return self.cursor_instance
 
 
-def post_row():
+def post_row(image_url=None):
     return {
         "id": 10,
         "author_id": AUTHOR_ID,
         "product_name": "햇반 24개",
         "product_url": None,
-        "image_url": None,
+        "image_url": image_url,
         "total_price": 22900,
         "total_quantity": 24,
         "host_quantity": 4,
@@ -161,6 +161,22 @@ class PostRecruitmentResponseTest(unittest.TestCase):
 
         self.assertEqual(post.remaining_quantity, 10)
         self.assertEqual(connection.cursor_instance.calls[0][1], (10,))
+
+    def test_post_list_preserves_image_url(self):
+        connection = FakeConnection([post_row("https://cdn.example/post.png")])
+
+        with patch("app.routers.posts.get_connection", return_value=connection):
+            post = get_posts()["data"][0]
+
+        self.assertEqual(post.image_url, "https://cdn.example/post.png")
+
+    def test_post_detail_preserves_image_url(self):
+        connection = FakeConnection([post_row("https://cdn.example/post.png")])
+
+        with patch("app.routers.posts.get_connection", return_value=connection):
+            post = get_post(10)["data"]
+
+        self.assertEqual(post.image_url, "https://cdn.example/post.png")
 
     def test_missing_post_returns_not_found(self):
         connection = FakeConnection([])

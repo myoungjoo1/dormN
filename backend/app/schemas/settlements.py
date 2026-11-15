@@ -4,6 +4,12 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
+class SettlementAccountConfirmationResponse(BaseModel):
+    post_id: int
+    account_confirmed: bool
+    registered_at: datetime
+
+
 class SettlementResponse(BaseModel):
     id: int
     participation_id: int

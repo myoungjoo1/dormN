@@ -327,8 +327,13 @@ def _storage_remove(config: StorageConfig, storage_path: str) -> None:
         raise StorageOperationError("Storage cleanup failed") from exc
 
 
+def delete_post_image_storage(storage_path: str) -> None:
+    """Delete one server-owned Storage object; a missing object is success."""
+    _storage_remove(_load_storage_config(), storage_path)
+
+
 def _try_remove_orphan(config: StorageConfig, storage_path: str) -> None:
     try:
         _storage_remove(config, storage_path)
     except Exception:
-        logger.exception("Failed to remove orphaned post image path=%s", storage_path)
+        logger.exception("Failed to remove orphaned post image")

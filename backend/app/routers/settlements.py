@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+import psycopg
 from psycopg.rows import dict_row
 
 from app.api import ApiException, ApiResponse
@@ -8,6 +9,7 @@ from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.settlements import (
     HostSettlementListResponse,
+    SettlementAccountConfirmationResponse,
     SettlementResponse,
 )
 from app.services.recruitment import calculate_settlement_amount
@@ -24,6 +26,110 @@ SETTLEMENT_COLUMNS = """
     s.confirmed_at,
     s.created_at
 """
+
+
+@router.post(
+    "/posts/{post_id}/settlement-account",
+    response_model=ApiResponse[SettlementAccountConfirmationResponse],
+)
+def confirm_post_settlement_account(
+    post_id: int,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, author_id, status
+                    FROM public.posts
+                    WHERE id = %s
+                    FOR UPDATE
+                    """,
+                    (post_id,),
+                )
+                post = cursor.fetchone()
+
+                if post is None:
+                    raise ApiException(
+                        404,
+                        "POST_NOT_FOUND",
+                        "Post not found",
+                    )
+
+                if post["author_id"] != current_user_id:
+                    raise ApiException(
+                        403,
+                        "POST_AUTHOR_REQUIRED",
+                        "Only the post author can confirm the settlement account",
+                    )
+
+                if post["status"] != "CLOSED":
+                    raise ApiException(
+                        409,
+                        "SETTLEMENT_ACCOUNT_POST_NOT_CLOSED",
+                        "Settlement account can only be confirmed for a closed post",
+                    )
+
+                cursor.execute(
+                    """
+                    SELECT bank_name, account_number, account_holder_name
+                    FROM dormn_private.user_settlement_accounts
+                    WHERE user_id = %s
+                    FOR UPDATE
+                    """,
+                    (current_user_id,),
+                )
+                account = cursor.fetchone()
+
+                if account is None:
+                    raise ApiException(
+                        409,
+                        "SETTLEMENT_ACCOUNT_NOT_REGISTERED",
+                        "Register a settlement account before confirming this post",
+                    )
+
+                cursor.execute(
+                    """
+                    INSERT INTO dormn_private.post_settlement_accounts (
+                        post_id,
+                        bank_name,
+                        account_number,
+                        account_holder_name
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (post_id) DO NOTHING
+                    RETURNING post_id, registered_at
+                    """,
+                    (
+                        post_id,
+                        account["bank_name"],
+                        account["account_number"],
+                        account["account_holder_name"],
+                    ),
+                )
+                snapshot = cursor.fetchone()
+
+                if snapshot is None:
+                    raise ApiException(
+                        409,
+                        "SETTLEMENT_ACCOUNT_ALREADY_FIXED",
+                        "Settlement account has already been confirmed",
+                    )
+    except psycopg.Error as exc:
+        raise ApiException(
+            503,
+            "SETTLEMENT_ACCOUNT_UNAVAILABLE",
+            "Settlement account service is temporarily unavailable",
+        ) from exc
+
+    return {
+        "data": SettlementAccountConfirmationResponse(
+            post_id=snapshot["post_id"],
+            account_confirmed=True,
+            registered_at=snapshot["registered_at"],
+        )
+    }
 
 
 @router.get(

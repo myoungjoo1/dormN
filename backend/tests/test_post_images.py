@@ -17,6 +17,7 @@ from app.services.post_image_storage import (
     MAX_POST_IMAGE_BYTES,
     PostImageUpload,
     StorageOperationError,
+    get_public_post_image_url,
     upload_post_image,
 )
 
@@ -173,6 +174,19 @@ class PostImageUploadTest(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 503)
         self.assertEqual(context.exception.code, "IMAGE_UPLOAD_UNAVAILABLE")
         self.assertNotIn("secret-key", context.exception.message)
+
+    def test_public_image_url_does_not_include_secret_key(self):
+        with patch.dict(os.environ, storage_environment()):
+            result = get_public_post_image_url(
+                f"tmp/{USER_ID}/{UPLOAD_ID}.png"
+            )
+
+        self.assertEqual(
+            result,
+            f"https://example.supabase.co/storage/v1/object/public/"
+            f"post-images/tmp/{USER_ID}/{UPLOAD_ID}.png",
+        )
+        self.assertNotIn("test-secret-key", result)
 
 
 if __name__ == "__main__":
