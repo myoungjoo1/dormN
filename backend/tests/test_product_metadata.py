@@ -12,6 +12,13 @@ from app.services.product_metadata import (
 
 
 class ProductMetadataTest(unittest.TestCase):
+    def test_localhost_name_is_rejected_before_dns_resolution(self):
+        with patch("app.services.product_metadata.socket.getaddrinfo") as resolve:
+            with self.assertRaises(BlockedProductUrl):
+                fetch_product_metadata("http://localhost/item")
+
+        resolve.assert_not_called()
+
     def test_extracts_title_and_resolves_relative_og_image(self):
         html = """
             <html><head>

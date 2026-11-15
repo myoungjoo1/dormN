@@ -12,6 +12,11 @@ from app.schemas.posts import (
     PostResponse,
     PostStatusUpdateRequest,
 )
+from app.services.product_metadata import (
+    BlockedProductUrl,
+    InvalidProductUrl,
+    fetch_product_metadata,
+)
 
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -33,6 +38,23 @@ def create_post(
     post: PostCreateRequest,
     current_user_id: UUID = Depends(get_current_user_id),
 ):
+    image_url = None
+    if post.product_url is not None:
+        try:
+            image_url = fetch_product_metadata(post.product_url).image_url
+        except InvalidProductUrl as exc:
+            raise ApiException(
+                422,
+                "INVALID_PRODUCT_URL",
+                str(exc),
+            ) from exc
+        except BlockedProductUrl as exc:
+            raise ApiException(
+                422,
+                "PRODUCT_URL_BLOCKED",
+                str(exc),
+            ) from exc
+
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -69,7 +91,7 @@ def create_post(
                     current_user_id,
                     post.product_name,
                     post.product_url,
-                    post.image_url,
+                    image_url,
                     post.total_price,
                     post.total_quantity,
                     post.host_quantity,

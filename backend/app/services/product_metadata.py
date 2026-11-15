@@ -233,9 +233,11 @@ def _validate_product_url(product_url: str):
     if port == 0:
         raise InvalidProductUrl("Product URL has an invalid port")
 
-    host = parsed.hostname.rstrip(".")
+    host = parsed.hostname.rstrip(".").lower()
     if not host or any(ord(character) < 32 for character in host):
         raise InvalidProductUrl("Product URL has an invalid hostname")
+    if host == "localhost" or host.endswith(".localhost"):
+        raise BlockedProductUrl("Product URL resolves to a blocked address")
 
     return parsed
 
