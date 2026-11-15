@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 class PostCreateRequest(BaseModel):
     product_name: str = Field(max_length=200)
     product_url: str | None = None
+    image_upload_id: UUID | None = None
     total_price: int = Field(gt=0)
     total_quantity: int = Field(gt=0)
     host_quantity: int = Field(ge=1)

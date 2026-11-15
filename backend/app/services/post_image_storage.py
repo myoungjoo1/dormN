@@ -259,6 +259,24 @@ def _public_url(config: StorageConfig, storage_path: str) -> str:
     return f"{config.supabase_url}/storage/v1/object/public/{bucket}/{path}"
 
 
+def get_public_post_image_url(storage_path: str) -> str:
+    """Build a public URL from a server-owned Storage path."""
+    supabase_url = os.getenv("SUPABASE_URL")
+    bucket = os.getenv("SUPABASE_STORAGE_BUCKET", DEFAULT_STORAGE_BUCKET)
+    if not supabase_url or not bucket:
+        raise StorageConfigurationError("Storage is not configured")
+
+    return _public_url(
+        StorageConfig(
+            supabase_url=supabase_url.rstrip("/"),
+            secret_key="",
+            bucket=bucket,
+            ttl_hours=DEFAULT_UPLOAD_TTL_HOURS,
+        ),
+        storage_path,
+    )
+
+
 def _storage_headers(config: StorageConfig, content_type: str | None = None):
     headers = {
         "apikey": config.secret_key,

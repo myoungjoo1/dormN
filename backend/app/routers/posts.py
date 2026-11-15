@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
@@ -16,6 +17,10 @@ from app.services.product_metadata import (
     BlockedProductUrl,
     InvalidProductUrl,
     fetch_product_metadata,
+)
+from app.services.post_image_storage import (
+    StorageConfigurationError,
+    get_public_post_image_url,
 )
 
 
@@ -39,7 +44,7 @@ def create_post(
     current_user_id: UUID = Depends(get_current_user_id),
 ):
     image_url = None
-    if post.product_url is not None:
+    if post.image_upload_id is None and post.product_url is not None:
         try:
             image_url = fetch_product_metadata(post.product_url).image_url
         except InvalidProductUrl as exc:
@@ -57,6 +62,58 @@ def create_post(
 
     with get_connection() as conn:
         with conn.cursor() as cursor:
+            upload = None
+            if post.image_upload_id is not None:
+                cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        user_id,
+                        storage_path,
+                        expires_at,
+                        claimed_post_id
+                    FROM public.post_image_uploads
+                    WHERE id = %s
+                    FOR UPDATE
+                    """,
+                    (post.image_upload_id,),
+                )
+                upload = cursor.fetchone()
+
+                if upload is None:
+                    raise ApiException(
+                        404,
+                        "IMAGE_UPLOAD_NOT_FOUND",
+                        "Image upload not found",
+                    )
+                if upload[1] != current_user_id:
+                    raise ApiException(
+                        403,
+                        "IMAGE_UPLOAD_NOT_OWNED",
+                        "Image upload does not belong to the current user",
+                    )
+                if upload[3] <= datetime.now(timezone.utc):
+                    raise ApiException(
+                        409,
+                        "IMAGE_UPLOAD_EXPIRED",
+                        "Image upload has expired",
+                    )
+                if upload[4] is not None:
+                    raise ApiException(
+                        409,
+                        "IMAGE_UPLOAD_ALREADY_USED",
+                        "Image upload has already been used",
+                    )
+
+                try:
+                    image_url = get_public_post_image_url(upload[2])
+                except StorageConfigurationError as exc:
+                    raise ApiException(
+                        500,
+                        "STORAGE_CONFIGURATION_ERROR",
+                        "Storage is not configured",
+                    ) from exc
+
             cursor.execute(
                 """
                 INSERT INTO posts (
@@ -101,6 +158,24 @@ def create_post(
                 ),
             )
             row = cursor.fetchone()
+
+            if upload is not None:
+                cursor.execute(
+                    """
+                    UPDATE public.post_image_uploads
+                    SET claimed_post_id = %s, claimed_at = NOW()
+                    WHERE id = %s
+                      AND claimed_post_id IS NULL
+                    RETURNING id
+                    """,
+                    (row[0], post.image_upload_id),
+                )
+                if cursor.fetchone() is None:
+                    raise ApiException(
+                        409,
+                        "IMAGE_UPLOAD_ALREADY_USED",
+                        "Image upload has already been used",
+                    )
 
     return {
         "data": {
