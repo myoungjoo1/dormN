@@ -47,6 +47,10 @@ CREATE TABLE public.post_image_uploads (
     )
 );
 
+-- Client-facing Supabase keys must not read or write this management table.
+-- The backend database connection is responsible for upload record changes.
+ALTER TABLE public.post_image_uploads ENABLE ROW LEVEL SECURITY;
+
 -- Cleanup scans only unclaimed uploads by expiry time.
 CREATE INDEX post_image_uploads_unclaimed_expiry_idx
     ON public.post_image_uploads (expires_at)

@@ -15,6 +15,7 @@ from app.api import (
 )
 from app.database import test_connection
 from app.routers.participations import router as participations_router
+from app.routers.post_images import router as post_images_router
 from app.routers.posts import router as posts_router
 from app.routers.products import router as products_router
 from app.routers.settlements import router as settlements_router
@@ -51,6 +52,7 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 app.include_router(posts_router)
+app.include_router(post_images_router)
 app.include_router(products_router)
 app.include_router(participations_router)
 app.include_router(settlements_router)
