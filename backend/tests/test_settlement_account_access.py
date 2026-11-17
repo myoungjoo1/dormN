@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from app.auth import get_current_user_id
 from app.routers.settlements import (
     get_post_settlement_account,
+    get_my_settlement,
     mark_settlement_sent,
 )
 
@@ -89,6 +90,33 @@ class FakeConnection:
 
 
 class SettlementAccountAccessTest(unittest.TestCase):
+    def test_my_settlement_includes_final_quantity(self):
+        connection = FakeConnection(
+            [
+                {
+                    "id": SETTLEMENT_ID,
+                    "participation_id": 30,
+                    "quantity": 4,
+                    "pickup_completed_at": CREATED_AT,
+                    "amount": 3816,
+                    "payment_status": "UNPAID",
+                    "sent_at": None,
+                    "confirmed_at": None,
+                    "created_at": CREATED_AT,
+                }
+            ]
+        )
+
+        with patch(
+            "app.routers.settlements.get_connection",
+            return_value=connection,
+        ):
+            result = get_my_settlement(POST_ID, PARTICIPANT_USER_ID)
+
+        self.assertEqual(result["data"].quantity, 4)
+        self.assertEqual(result["data"].pickup_completed_at, CREATED_AT)
+        self.assertIn("p.quantity", connection.cursor_instance.calls[0][0])
+
     def call_account(self, rows, user_id):
         connection = FakeConnection(rows)
         with patch(

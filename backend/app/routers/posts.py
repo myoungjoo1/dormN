@@ -286,6 +286,23 @@ def update_post_status(
                         "All participant settlements must be confirmed",
                     )
 
+            if post["status"] == "PICKUP" and status_update.status == "COMPLETED":
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) AS pending_count
+                    FROM public.participations
+                    WHERE post_id = %s
+                      AND pickup_completed_at IS NULL
+                    """,
+                    (post_id,),
+                )
+                if cursor.fetchone()["pending_count"] > 0:
+                    raise ApiException(
+                        409,
+                        "PICKUPS_NOT_COMPLETED",
+                        "All participants must complete pickup first",
+                    )
+
             cursor.execute(
                 """
                 UPDATE public.posts

@@ -141,10 +141,28 @@ class PostStatusUpdateTest(unittest.TestCase):
         for current_status, target_status in transitions:
             with self.subTest(current_status=current_status):
                 updated_post, _ = self.call_endpoint(
-                    [post_row(current_status), post_row(target_status)],
+                    [
+                        post_row(current_status),
+                        {"pending_count": 0}
+                        if current_status == "PICKUP"
+                        else post_row(target_status),
+                        post_row(target_status),
+                    ]
+                    if current_status == "PICKUP"
+                    else [post_row(current_status), post_row(target_status)],
                     target_status,
                 )
                 self.assertEqual(updated_post.status, target_status)
+
+    def test_completed_status_is_blocked_until_all_pickups_are_done(self):
+        with self.assertRaises(HTTPException) as context:
+            self.call_endpoint(
+                [post_row("PICKUP"), {"pending_count": 1}],
+                "COMPLETED",
+            )
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(context.exception.code, "PICKUPS_NOT_COMPLETED")
 
     def test_status_cannot_skip_a_step(self):
         with self.assertRaises(HTTPException) as context:

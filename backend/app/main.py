@@ -18,6 +18,7 @@ from app.routers.participations import router as participations_router
 from app.routers.chat import router as chat_router
 from app.routers.post_images import router as post_images_router
 from app.routers.posts import router as posts_router
+from app.routers.pickups import router as pickups_router
 from app.routers.products import router as products_router
 from app.routers.settlements import router as settlements_router
 from app.routers.users import router as users_router
@@ -53,6 +54,7 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 app.include_router(posts_router)
+app.include_router(pickups_router)
 app.include_router(post_images_router)
 app.include_router(products_router)
 app.include_router(participations_router)

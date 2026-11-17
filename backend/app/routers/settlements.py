@@ -231,7 +231,9 @@ def get_my_settlement(
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 f"""
-                SELECT {SETTLEMENT_COLUMNS}
+                SELECT {SETTLEMENT_COLUMNS},
+                       p.quantity,
+                       p.pickup_completed_at
                 FROM settlements AS s
                 JOIN participations AS p ON p.id = s.participation_id
                 WHERE p.post_id = %s AND p.user_id = %s

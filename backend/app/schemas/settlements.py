@@ -20,6 +20,8 @@ class SettlementAccountResponse(BaseModel):
 class SettlementResponse(BaseModel):
     id: int
     participation_id: int
+    quantity: int | None = None
+    pickup_completed_at: datetime | None = None
     amount: int
     payment_status: str
     sent_at: datetime | None
