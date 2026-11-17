@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from psycopg.rows import dict_row
 
 from app.api import ApiException, ApiResponse
 from app.auth import get_current_user_id
 from app.database import get_connection
+from app.routers.chat import connection_manager
 from app.schemas.posts import (
     PostCreateRequest,
     PostRecruitmentResponse,
@@ -18,6 +19,7 @@ from app.services.product_metadata import (
     InvalidProductUrl,
     fetch_product_metadata,
 )
+from app.services.chat import create_group_system_message
 from app.services.post_image_storage import (
     StorageConfigurationError,
     get_public_post_image_url,
@@ -211,8 +213,10 @@ def create_post(
 def update_post_status(
     post_id: int,
     status_update: PostStatusUpdateRequest,
+    background_tasks: BackgroundTasks,
     current_user_id: UUID = Depends(get_current_user_id),
 ):
+    chat_event = None
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
@@ -305,6 +309,19 @@ def update_post_status(
                 (status_update.status, post_id),
             )
             updated_post = cursor.fetchone()
+
+        chat_event = create_group_system_message(
+            conn,
+            post_id,
+            status_update.status,
+        )
+
+    if chat_event is not None:
+        background_tasks.add_task(
+            connection_manager.broadcast,
+            chat_event["room_id"],
+            {"data": chat_event["message"]},
+        )
 
     return {"data": PostResponse.model_validate(updated_post)}
 

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 from uuid import UUID
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from app.routers.posts import update_post_status
 from app.schemas.posts import PostStatusUpdateRequest
@@ -66,10 +66,14 @@ def post_row(status="CLOSED", author_id=HOST_USER_ID):
 class PostStatusUpdateTest(unittest.TestCase):
     def call_endpoint(self, rows, target_status, user_id=HOST_USER_ID):
         connection = FakeConnection(rows)
-        with patch("app.routers.posts.get_connection", return_value=connection):
+        with patch("app.routers.posts.get_connection", return_value=connection), patch(
+            "app.routers.posts.create_group_system_message",
+            return_value=None,
+        ):
             result = update_post_status(
                 10,
                 PostStatusUpdateRequest(status=target_status),
+                BackgroundTasks(),
                 user_id,
             )
         return result["data"], connection
@@ -86,6 +90,37 @@ class PostStatusUpdateTest(unittest.TestCase):
 
         self.assertEqual(updated_post.status, "ORDERED")
         self.assertEqual(connection.cursor_instance.calls[-1][1], ("ORDERED", 10))
+
+    def test_status_change_schedules_system_message_broadcast(self):
+        background_tasks = BackgroundTasks()
+        connection = FakeConnection(
+            [post_row("CLOSED"), {"pending_count": 0}, post_row("ORDERED")]
+        )
+        event = {
+            "room_id": 50,
+            "message": {
+                "id": 7,
+                "sender_id": None,
+                "sender_room_number": None,
+                "message_type": "SYSTEM",
+                "body": "모집자가 주문을 완료했습니다.",
+                "created_at": datetime(2026, 11, 17, tzinfo=timezone.utc),
+            },
+        }
+
+        with patch("app.routers.posts.get_connection", return_value=connection), patch(
+            "app.routers.posts.create_group_system_message",
+            return_value=event,
+        ) as create_message:
+            update_post_status(
+                10,
+                PostStatusUpdateRequest(status="ORDERED"),
+                background_tasks,
+                HOST_USER_ID,
+            )
+
+        create_message.assert_called_once_with(connection, 10, "ORDERED")
+        self.assertEqual(len(background_tasks.tasks), 1)
 
     def test_closed_post_cannot_be_ordered_with_pending_settlements(self):
         with self.assertRaises(HTTPException) as context:

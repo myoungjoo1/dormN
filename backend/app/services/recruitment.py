@@ -1,6 +1,7 @@
 from psycopg.rows import dict_row
 
 from app.database import get_connection
+from app.services.chat import create_group_system_message
 
 
 def calculate_settlement_amount(
@@ -117,6 +118,8 @@ def finalize_recruitment(conn, post_id: int):
             (final_host_quantity, final_status, post_id),
         )
         finalized_post = cursor.fetchone()
+
+    create_group_system_message(conn, post_id, final_status)
 
     if final_status == "CLOSED":
         create_settlements(

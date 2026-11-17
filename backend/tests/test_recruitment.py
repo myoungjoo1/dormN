@@ -73,7 +73,10 @@ def finalized_post(status, host_quantity):
 class RecruitmentFinalizationTest(unittest.TestCase):
     def call_finalize(self, rows):
         connection = FakeConnection(rows)
-        with patch("app.services.recruitment.create_settlements") as create:
+        with patch("app.services.recruitment.create_settlements") as create, patch(
+            "app.services.recruitment.create_group_system_message",
+            return_value=None,
+        ):
             result = finalize_recruitment(connection, 10)
         return result, connection, create
 
@@ -120,6 +123,36 @@ class RecruitmentFinalizationTest(unittest.TestCase):
             (4, "CANCELLED", 10),
         )
         create.assert_not_called()
+
+    def test_finalization_creates_system_message_for_closed_status(self):
+        connection = FakeConnection(
+            [
+                post_row(deadline_reached=True),
+                {"participant_quantity": 10},
+                finalized_post("CLOSED", 14),
+            ]
+        )
+
+        with patch("app.services.recruitment.create_settlements"), patch(
+            "app.services.recruitment.create_group_system_message"
+        ) as create_message:
+            finalize_recruitment(connection, 10)
+
+        create_message.assert_called_once_with(connection, 10, "CLOSED")
+
+    def test_finalization_creates_system_message_for_cancelled_status(self):
+        connection = FakeConnection(
+            [
+                post_row(policy="CANCEL_IF_SHORT", deadline_reached=True),
+                {"participant_quantity": 10},
+                finalized_post("CANCELLED", 4),
+            ]
+        )
+
+        with patch("app.services.recruitment.create_group_system_message") as create_message:
+            finalize_recruitment(connection, 10)
+
+        create_message.assert_called_once_with(connection, 10, "CANCELLED")
 
     def test_full_post_closes_before_deadline_and_creates_settlements(self):
         result, _, create = self.call_finalize(
