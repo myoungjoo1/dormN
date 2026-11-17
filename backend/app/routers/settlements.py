@@ -10,6 +10,7 @@ from app.database import get_connection
 from app.schemas.settlements import (
     HostSettlementListResponse,
     SettlementAccountConfirmationResponse,
+    SettlementAccountResponse,
     SettlementResponse,
 )
 from app.services.recruitment import calculate_settlement_amount
@@ -26,6 +27,14 @@ SETTLEMENT_COLUMNS = """
     s.confirmed_at,
     s.created_at
 """
+
+POST_SETTLEMENT_ACCOUNT_STATUSES = {
+    "CLOSED",
+    "ORDERED",
+    "ARRIVED",
+    "PICKUP",
+    "COMPLETED",
+}
 
 
 @router.post(
@@ -133,6 +142,84 @@ def confirm_post_settlement_account(
 
 
 @router.get(
+    "/posts/{post_id}/settlement-account",
+    response_model=ApiResponse[SettlementAccountResponse],
+)
+def get_post_settlement_account(
+    post_id: int,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        post.id,
+                        post.author_id,
+                        post.status,
+                        EXISTS (
+                            SELECT 1
+                            FROM public.participations AS own_participation
+                            WHERE own_participation.post_id = post.id
+                              AND own_participation.user_id = %s
+                        ) AS is_participant
+                    FROM public.posts AS post
+                    WHERE post.id = %s
+                    """,
+                    (current_user_id, post_id),
+                )
+                post = cursor.fetchone()
+
+                if post is None:
+                    raise ApiException(
+                        404,
+                        "POST_NOT_FOUND",
+                        "Post not found",
+                    )
+
+                if post["status"] not in POST_SETTLEMENT_ACCOUNT_STATUSES:
+                    raise ApiException(
+                        409,
+                        "SETTLEMENT_ACCOUNT_POST_NOT_CLOSED",
+                        "Settlement account is not available for this post",
+                    )
+
+                is_author = post["author_id"] == current_user_id
+                if not is_author and not post["is_participant"]:
+                    raise ApiException(
+                        403,
+                        "POST_PARTICIPATION_REQUIRED",
+                        "Only the post author or a participant can view the settlement account",
+                    )
+
+                cursor.execute(
+                    """
+                    SELECT bank_name, account_number, account_holder_name, registered_at
+                    FROM dormn_private.post_settlement_accounts
+                    WHERE post_id = %s
+                    """,
+                    (post_id,),
+                )
+                account = cursor.fetchone()
+
+                if account is None:
+                    raise ApiException(
+                        409,
+                        "SETTLEMENT_ACCOUNT_NOT_FIXED",
+                        "Settlement account has not been confirmed",
+                    )
+    except psycopg.Error as exc:
+        raise ApiException(
+            503,
+            "SETTLEMENT_ACCOUNT_UNAVAILABLE",
+            "Settlement account service is temporarily unavailable",
+        ) from exc
+
+    return {"data": SettlementAccountResponse.model_validate(account)}
+
+
+@router.get(
     "/posts/{post_id}/settlement/me",
     response_model=ApiResponse[SettlementResponse],
 )
@@ -171,11 +258,19 @@ def mark_settlement_sent(
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
                 f"""
-                SELECT {SETTLEMENT_COLUMNS}
+                SELECT
+                    {SETTLEMENT_COLUMNS},
+                    post.status AS post_status,
+                    EXISTS (
+                        SELECT 1
+                        FROM dormn_private.post_settlement_accounts AS psa
+                        WHERE psa.post_id = p.post_id
+                    ) AS settlement_account_confirmed
                 FROM settlements AS s
                 JOIN participations AS p ON p.id = s.participation_id
+                JOIN public.posts AS post ON post.id = p.post_id
                 WHERE s.id = %s AND p.user_id = %s
-                FOR UPDATE OF s
+                FOR UPDATE OF s, post
                 """,
                 (settlement_id, current_user_id),
             )
@@ -193,6 +288,20 @@ def mark_settlement_sent(
                     409,
                     "SETTLEMENT_NOT_UNPAID",
                     "Settlement is not unpaid",
+                )
+
+            if settlement["post_status"] not in POST_SETTLEMENT_ACCOUNT_STATUSES:
+                raise ApiException(
+                    409,
+                    "SETTLEMENT_ACCOUNT_POST_NOT_CLOSED",
+                    "Settlement account is not available for this post",
+                )
+
+            if not settlement["settlement_account_confirmed"]:
+                raise ApiException(
+                    409,
+                    "SETTLEMENT_ACCOUNT_NOT_FIXED",
+                    "Settlement account has not been confirmed",
                 )
 
             cursor.execute(

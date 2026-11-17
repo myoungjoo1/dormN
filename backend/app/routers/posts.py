@@ -159,6 +159,17 @@ def create_post(
             )
             row = cursor.fetchone()
 
+            cursor.execute(
+                """
+                INSERT INTO public.chat_rooms (room_type, post_id)
+                VALUES ('GROUP', %s)
+                ON CONFLICT (post_id)
+                    WHERE room_type = 'GROUP'
+                DO NOTHING
+                """,
+                (row[0],),
+            )
+
             if upload is not None:
                 cursor.execute(
                     """

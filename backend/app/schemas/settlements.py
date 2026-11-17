@@ -10,6 +10,13 @@ class SettlementAccountConfirmationResponse(BaseModel):
     registered_at: datetime
 
 
+class SettlementAccountResponse(BaseModel):
+    bank_name: str
+    account_number: str
+    account_holder_name: str
+    registered_at: datetime
+
+
 class SettlementResponse(BaseModel):
     id: int
     participation_id: int

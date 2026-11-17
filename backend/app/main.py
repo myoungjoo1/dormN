@@ -15,6 +15,7 @@ from app.api import (
 )
 from app.database import test_connection
 from app.routers.participations import router as participations_router
+from app.routers.chat import router as chat_router
 from app.routers.post_images import router as post_images_router
 from app.routers.posts import router as posts_router
 from app.routers.products import router as products_router
@@ -55,6 +56,7 @@ app.include_router(posts_router)
 app.include_router(post_images_router)
 app.include_router(products_router)
 app.include_router(participations_router)
+app.include_router(chat_router)
 app.include_router(settlements_router)
 app.include_router(users_router)
 

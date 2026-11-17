@@ -119,6 +119,12 @@ class PostRecruitmentResponseTest(unittest.TestCase):
         )
         self.assertEqual(result["data"]["image_url"], "https://cdn.example/image.jpg")
         self.assertNotIn("image_url", PostCreateRequest.model_fields)
+        self.assertTrue(
+            any(
+                "INSERT INTO public.chat_rooms" in query
+                for query, _ in connection.cursor_instance.calls
+            )
+        )
 
     def test_create_post_succeeds_with_null_image_when_metadata_is_missing(self):
         connection = FakeConnection([created_post_row()])
