@@ -16,6 +16,7 @@ from app.api import (
 from app.database import test_connection
 from app.routers.participations import router as participations_router
 from app.routers.chat import router as chat_router
+from app.routers.chat import connection_manager
 from app.routers.post_images import router as post_images_router
 from app.routers.posts import router as posts_router
 from app.routers.pickups import router as pickups_router
@@ -31,7 +32,17 @@ RECRUITMENT_SCHEDULER_INTERVAL_SECONDS = 30
 async def recruitment_scheduler():
     while True:
         try:
-            await asyncio.to_thread(process_expired_recruitment_once)
+            chat_events = await asyncio.to_thread(
+                process_expired_recruitment_once
+            )
+            for chat_event in chat_events:
+                try:
+                    await connection_manager.broadcast(
+                        chat_event["room_id"],
+                        {"data": chat_event["message"]},
+                    )
+                except Exception:
+                    logger.exception("Recruitment chat broadcast failed")
         except Exception:
             logger.exception("Recruitment scheduler failed")
 

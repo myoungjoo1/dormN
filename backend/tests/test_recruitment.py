@@ -1,6 +1,6 @@
 import os
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import ANY, call, patch
 from uuid import UUID
 
 from app.database import DATABASE_URL, get_connection
@@ -154,6 +154,25 @@ class RecruitmentFinalizationTest(unittest.TestCase):
 
         create_message.assert_called_once_with(connection, 10, "CANCELLED")
 
+    def test_finalization_collects_new_chat_event_for_post_commit_broadcast(self):
+        connection = FakeConnection(
+            [
+                post_row(deadline_reached=True),
+                {"participant_quantity": 10},
+                finalized_post("CLOSED", 14),
+            ]
+        )
+        chat_event = {"room_id": 7, "message": {"id": 9}}
+        events = []
+
+        with patch(
+            "app.services.recruitment.create_group_system_message",
+            return_value=chat_event,
+        ), patch("app.services.recruitment.create_settlements"):
+            finalize_recruitment(connection, 10, event_sink=events)
+
+        self.assertEqual(events, [chat_event])
+
     def test_full_post_closes_before_deadline_and_creates_settlements(self):
         result, _, create = self.call_finalize(
             [
@@ -184,7 +203,10 @@ class RecruitmentFinalizationTest(unittest.TestCase):
 
         self.assertEqual(
             finalize.call_args_list,
-            [call(connection, 10), call(connection, 11)],
+            [
+                call(connection, 10, event_sink=ANY),
+                call(connection, 11, event_sink=ANY),
+            ],
         )
 
 

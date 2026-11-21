@@ -7,6 +7,9 @@ import '../../core/api/api_exception.dart';
 import '../../core/api/dormn_api.dart';
 import '../../models/participation.dart';
 import '../../models/post.dart';
+import '../chat/chat_room_page.dart';
+import '../settlements/host_settlement_page.dart';
+import '../settlements/my_settlement_page.dart';
 
 const _blue = Color(0xFF3156D9);
 const _pageBackground = Color(0xFFF7F8FC);
@@ -67,6 +70,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
   bool _isJoining = false;
   bool _hasChanges = false;
   bool _isNotFound = false;
+  bool _isOpeningChat = false;
   Timer? _quoteDebounce;
   int _quoteRequestVersion = 0;
 
@@ -83,6 +87,21 @@ class _PostDetailPageState extends State<PostDetailPage> {
       _post?.status == 'RECRUITING' &&
       _post!.deadline.isAfter(DateTime.now()) &&
       _post!.remainingQuantity > 0;
+
+  bool get _canViewSettlement {
+    final post = _post;
+    if (post == null || _currentUserId == null) return false;
+    if (post.status == 'RECRUITING' || post.status == 'CANCELLED') {
+      return false;
+    }
+    return _isAuthor || _isJoined;
+  }
+
+  bool get _canViewChat {
+    return _post != null &&
+        _currentUserId != null &&
+        (_isAuthor || _isJoined);
+  }
 
   @override
   void initState() {
@@ -393,6 +412,71 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+  Future<void> _openSettlement() async {
+    final post = _post;
+    if (post == null || !_canViewSettlement) return;
+    final page = _isAuthor
+        ? HostSettlementPage(postId: post.id)
+        : MySettlementPage(postId: post.id);
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(builder: (_) => page),
+    );
+    if (!mounted || result?['changed'] != true) return;
+    setState(() => _hasChanges = true);
+    await _loadPost();
+  }
+
+  Future<void> _openChat() async {
+    final post = _post;
+    final accessToken = _getAccessToken();
+    if (!_canViewChat || post == null || _isOpeningChat) return;
+    if (accessToken == null || accessToken.isEmpty) {
+      _showMessage('채팅방에 들어가려면 로그인이 필요합니다.');
+      return;
+    }
+
+    setState(() => _isOpeningChat = true);
+    try {
+      final room = await _api.getPostChat(
+        postId: post.id,
+        accessToken: accessToken,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ChatRoomPage(
+            room: room,
+            currentUserId: _currentUserId,
+            postStatus: post.status,
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) _showMessage(_chatErrorMessage(error));
+    } catch (_) {
+      if (mounted) _showMessage('채팅방을 불러오지 못했습니다. 다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => _isOpeningChat = false);
+    }
+  }
+
+  String _chatErrorMessage(ApiException error) {
+    switch (error.code) {
+      case 'DORM_VERIFICATION_REQUIRED':
+        return '기숙사 인증을 완료한 사용자만 채팅을 이용할 수 있어요.';
+      case 'AUTH_REQUIRED':
+      case 'INVALID_ACCESS_TOKEN':
+        return '로그인이 필요합니다. 다시 로그인해주세요.';
+      case 'CHAT_ACCESS_FORBIDDEN':
+        return '이 공동구매 채팅방에 접근할 권한이 없습니다.';
+      case 'POST_NOT_FOUND':
+      case 'CHAT_ROOM_NOT_FOUND':
+        return '공동구매 채팅방을 찾을 수 없습니다.';
+      default:
+        return error.message;
+    }
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -409,14 +493,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
   Widget build(BuildContext context) {
     final post = _post;
     final showJoinBar = post != null && _currentUserId != null && !_isAuthor;
-    final bottomBar = !showJoinBar
-        ? null
-        : _isJoined
-        ? _buildJoinedBar()
-        : _participationError != null
-        ? _buildParticipationErrorBar()
-        : _buildJoinBar();
-    return PopScope<bool>(
+    final settlementBar = _canViewSettlement ? _buildSettlementBar() : null;
+    final bottomBar = settlementBar ??
+        (!showJoinBar
+            ? null
+            : _isJoined
+            ? _buildJoinedBar()
+            : _participationError != null
+            ? _buildParticipationErrorBar()
+            : _buildJoinBar());
+    return PopScope<Map<String, dynamic>>(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _popWithResult();
@@ -464,6 +550,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
               _buildRecruitmentCard(post),
               const SizedBox(height: 12),
               _buildTradeInfoCard(post),
+              if (_canViewChat) ...[
+                const SizedBox(height: 12),
+                _buildChatButton(),
+              ],
             ],
           ),
         ),
@@ -637,6 +727,30 @@ class _PostDetailPageState extends State<PostDetailPage> {
     );
   }
 
+  Widget _buildChatButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: OutlinedButton.icon(
+        onPressed: _isOpeningChat ? null : _openChat,
+        icon: _isOpeningChat
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.chat_bubble_outline_rounded),
+        label: Text(_isOpeningChat ? '채팅방 여는 중...' : '공동구매 채팅방'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _blue,
+          side: const BorderSide(color: Color(0xFFCBD5FF)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
+          ),
+        ),
+      ),
+    );
+  }
+
   String _shortfallPolicyLabel(Post post) {
     if (post.shortfallPolicy == 'KEEP_BY_HOST') {
       return '모집자가 남은 수량을 부담하고 진행';
@@ -645,6 +759,44 @@ class _PostDetailPageState extends State<PostDetailPage> {
       return '목표 수량 미달 시 거래 취소';
     }
     return post.shortfallPolicy;
+  }
+
+  Widget _buildSettlementBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x18000000),
+              blurRadius: 12,
+              offset: Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: FilledButton.icon(
+            onPressed: _openSettlement,
+            icon: Icon(
+              _isAuthor
+                  ? Icons.dashboard_outlined
+                  : Icons.account_balance_wallet_outlined,
+            ),
+            label: Text(_isAuthor ? '공동구매 관리' : '나의 정산'),
+            style: FilledButton.styleFrom(
+              backgroundColor: _blue,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(13),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildJoinBar() {

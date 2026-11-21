@@ -42,7 +42,12 @@ def create_settlements(conn, post_id: int, total_price: int, total_quantity: int
             )
 
 
-def finalize_recruitment(conn, post_id: int):
+def finalize_recruitment(
+    conn,
+    post_id: int,
+    *,
+    event_sink: list[dict] | None = None,
+):
     with conn.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             """
@@ -119,7 +124,9 @@ def finalize_recruitment(conn, post_id: int):
         )
         finalized_post = cursor.fetchone()
 
-    create_group_system_message(conn, post_id, final_status)
+    chat_event = create_group_system_message(conn, post_id, final_status)
+    if chat_event is not None and event_sink is not None:
+        event_sink.append(chat_event)
 
     if final_status == "CLOSED":
         create_settlements(
@@ -134,6 +141,7 @@ def finalize_recruitment(conn, post_id: int):
 
 def process_expired_recruitment_once():
     # ponytail: one transaction per scheduler pass; split per post if batches grow.
+    chat_events = []
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -147,4 +155,6 @@ def process_expired_recruitment_once():
             post_ids = [row[0] for row in cursor.fetchall()]
 
         for post_id in post_ids:
-            finalize_recruitment(conn, post_id)
+            finalize_recruitment(conn, post_id, event_sink=chat_events)
+
+    return chat_events

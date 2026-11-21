@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/api/dormn_api.dart';
 import '../../models/post.dart';
+import '../chat/chat_room_list_page.dart';
+import '../mypage/mypage_page.dart';
 import 'post_create_page.dart';
 import 'post_detail_page.dart';
 
@@ -88,6 +90,18 @@ class _PostListPageState extends State<PostListPage> {
     }
   }
 
+  Future<void> _openChat() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const ChatRoomListPage()),
+    );
+  }
+
+  Future<void> _openMypage() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const MypagePage()),
+    );
+  }
+
   List<Post> get _visiblePosts {
     final now = DateTime.now();
     if (_selectedFilter == 1) {
@@ -116,7 +130,10 @@ class _PostListPageState extends State<PostListPage> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: 0,
-        onDestinationSelected: (_) {},
+        onDestinationSelected: (index) {
+          if (index == 2) _openChat();
+          if (index == 3) _openMypage();
+        },
         indicatorColor: const Color(0xFFE5EAFE),
         destinations: const [
           NavigationDestination(

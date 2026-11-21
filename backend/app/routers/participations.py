@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from psycopg.rows import dict_row
 
 from app.api import ApiException, ApiResponse
@@ -161,7 +161,10 @@ def join_post(
     post_id: int,
     participation: ParticipationCreateRequest,
     current_user_id: UUID = Depends(get_current_user_id),
+    *,
+    background_tasks: BackgroundTasks = None,
 ):
+    chat_events = []
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
@@ -236,6 +239,14 @@ def join_post(
             )
             row = cursor.fetchone()
 
-        finalize_recruitment(conn, post_id)
+        finalize_recruitment(conn, post_id, event_sink=chat_events)
+
+    if background_tasks is not None:
+        for chat_event in chat_events:
+            background_tasks.add_task(
+                connection_manager.broadcast,
+                chat_event["room_id"],
+                {"data": chat_event["message"]},
+            )
 
     return {"data": ParticipationResponse.model_validate(row)}

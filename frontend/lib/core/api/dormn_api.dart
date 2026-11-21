@@ -2,10 +2,16 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../models/chat_message.dart';
+import '../../models/chat_room.dart';
 import '../../models/post.dart';
 import '../../models/post_create_request.dart';
 import '../../models/participation.dart';
+import '../../models/participation_history.dart';
+import '../../models/pickup.dart';
 import '../../models/product_preview.dart';
+import '../../models/settlement.dart';
+import '../../models/user_search_result.dart';
 import '../../models/user_profile.dart';
 import 'api_exception.dart';
 
@@ -25,6 +31,36 @@ class DormNApi {
     return UserProfile.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
+  Future<List<UserSearchResult>> searchUsersByRoomNumber({
+    required String roomNumber,
+    required String accessToken,
+  }) async {
+    final normalizedRoomNumber = roomNumber.trim();
+    if (!RegExp(r'^[0-9]{3,4}-[1-9][0-9]*$')
+        .hasMatch(normalizedRoomNumber)) {
+      throw const ApiException(
+        422,
+        'INVALID_ROOM_NUMBER',
+        '호실 번호 형식을 확인해주세요.',
+      );
+    }
+
+    final data = await get(
+      '/users/search?room_number=${Uri.encodeQueryComponent(normalizedRoomNumber)}',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! List) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '사용자 검색 응답이 올바르지 않습니다.');
+    }
+    return data
+        .map(
+          (user) => UserSearchResult.fromJson(
+            Map<String, dynamic>.from(user as Map),
+          ),
+        )
+        .toList();
+  }
+
   Future<List<Post>> getPosts() async {
     final data = await get('/posts');
     if (data is! List) {
@@ -41,6 +77,132 @@ class DormNApi {
       throw const ApiException(0, 'INVALID_RESPONSE', '게시글 상세 응답이 올바르지 않습니다.');
     }
     return Post.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<List<Post>> getMyPosts({required String accessToken}) async {
+    final data = await get(
+      '/users/me/posts',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! List) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '모집 내역 응답이 올바르지 않습니다.');
+    }
+    return data
+        .map((post) => Post.fromJson(Map<String, dynamic>.from(post as Map)))
+        .toList();
+  }
+
+  Future<List<ParticipationHistory>> getMyParticipations({
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/users/me/participations',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! List) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '참여 내역 응답이 올바르지 않습니다.');
+    }
+    return data
+        .map(
+          (item) => ParticipationHistory.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
+
+  Future<List<ChatRoom>> getChatRooms({
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/chat/rooms',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! List) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '채팅방 목록 응답이 올바르지 않습니다.');
+    }
+    return data
+        .map((room) => ChatRoom.fromJson(Map<String, dynamic>.from(room as Map)))
+        .toList();
+  }
+
+  Future<ChatRoom> getPostChat({
+    required int postId,
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/posts/$postId/chat',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '공동구매 채팅방 응답이 올바르지 않습니다.');
+    }
+    return ChatRoom.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<ChatRoom> createDirectChat({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final data = await post(
+      '/chat/direct/$userId',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '1:1 채팅방 응답이 올바르지 않습니다.');
+    }
+    return ChatRoom.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<List<ChatMessage>> getRoomMessages({
+    required int roomId,
+    required String accessToken,
+    int? beforeId,
+    int limit = 50,
+  }) async {
+    if (limit < 1 || limit > 50) {
+      throw ArgumentError.value(limit, 'limit', 'limit must be between 1 and 50');
+    }
+
+    final query = <String>['limit=$limit'];
+    if (beforeId != null) query.add('before_id=$beforeId');
+    final data = await get(
+      '/chat/rooms/$roomId/messages?${query.join('&')}',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! List) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '메시지 목록 응답이 올바르지 않습니다.');
+    }
+    return data
+        .map(
+          (message) =>
+              ChatMessage.fromJson(Map<String, dynamic>.from(message as Map)),
+        )
+        .toList();
+  }
+
+  Future<ChatMessage> sendChatMessage({
+    required int roomId,
+    required String body,
+    required String accessToken,
+  }) async {
+    final trimmedBody = body.trim();
+    if (trimmedBody.isEmpty) {
+      throw const ApiException(422, 'INVALID_MESSAGE', '메시지를 입력해주세요.');
+    }
+    if (trimmedBody.length > 2000) {
+      throw const ApiException(422, 'INVALID_MESSAGE', '메시지는 2,000자 이내로 입력해주세요.');
+    }
+
+    final data = await post(
+      '/chat/rooms/$roomId/messages',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: {'body': trimmedBody},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '메시지 전송 응답이 올바르지 않습니다.');
+    }
+    return ChatMessage.fromJson(Map<String, dynamic>.from(data));
   }
 
   Future<ParticipationQuote> quoteParticipation({
@@ -87,6 +249,169 @@ class DormNApi {
       throw const ApiException(0, 'INVALID_RESPONSE', '참여 응답이 올바르지 않습니다.');
     }
     return Participation.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<PickupCompletion> completePickup({
+    required int participationId,
+    required String accessToken,
+  }) async {
+    final data = await post(
+      '/participations/$participationId/pickup',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '픽업 완료 응답이 올바르지 않습니다.');
+    }
+    return PickupCompletion.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<PickupSummary> getPostPickups({
+    required int postId,
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/posts/$postId/pickups',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! List) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '픽업 현황 응답이 올바르지 않습니다.');
+    }
+    return PickupSummary.fromJson(data);
+  }
+
+  Future<Settlement> getMySettlement({
+    required int postId,
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/posts/$postId/settlement/me',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '개인 정산 응답이 올바르지 않습니다.');
+    }
+    return Settlement.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<SettlementAccount> getPostSettlementAccount({
+    required int postId,
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/posts/$postId/settlement-account',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '거래 계좌 응답이 올바르지 않습니다.');
+    }
+    return SettlementAccount.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<SettlementAccount?> getMySettlementAccount({
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/users/me/settlement-account',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data == null) return null;
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '기본 계좌 응답이 올바르지 않습니다.');
+    }
+    return SettlementAccount.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<SettlementAccount> upsertMySettlementAccount({
+    required String bankName,
+    required String accountNumber,
+    required String accountHolderName,
+    required String accessToken,
+  }) async {
+    final data = await put(
+      '/users/me/settlement-account',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: {
+        'bank_name': bankName,
+        'account_number': accountNumber,
+        'account_holder_name': accountHolderName,
+      },
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '기본 계좌 저장 응답이 올바르지 않습니다.');
+    }
+    return SettlementAccount.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<Map<String, dynamic>> confirmPostSettlementAccount({
+    required int postId,
+    required String accessToken,
+  }) async {
+    final data = await post(
+      '/posts/$postId/settlement-account',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '거래 계좌 확정 응답이 올바르지 않습니다.');
+    }
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<Map<String, dynamic>> updatePostStatus({
+    required int postId,
+    required String status,
+    required String accessToken,
+  }) async {
+    final data = await patch(
+      '/posts/$postId/status',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: {'status': status},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '거래 상태 변경 응답이 올바르지 않습니다.');
+    }
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<Settlement> markSettlementSent({
+    required int settlementId,
+    required String accessToken,
+  }) async {
+    final data = await post(
+      '/settlements/$settlementId/sent',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '송금 상태 응답이 올바르지 않습니다.');
+    }
+    return Settlement.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<HostSettlementSummary> getHostSettlements({
+    required int postId,
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/posts/$postId/settlements',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '모집자 정산 목록 응답이 올바르지 않습니다.');
+    }
+    return HostSettlementSummary.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<Settlement> confirmSettlement({
+    required int settlementId,
+    required String accessToken,
+  }) async {
+    final data = await post(
+      '/settlements/$settlementId/confirm',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '입금 확인 응답이 올바르지 않습니다.');
+    }
+    return Settlement.fromJson(Map<String, dynamic>.from(data));
   }
 
   Future<ProductPreview> previewProduct(String productUrl) async {

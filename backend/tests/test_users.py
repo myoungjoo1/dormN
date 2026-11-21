@@ -10,10 +10,15 @@ from pydantic import ValidationError
 
 from app.routers.users import (
     get_settlement_account,
+    search_users,
     update_me,
     upsert_settlement_account,
 )
-from app.schemas.users import SettlementAccountRequest, UserUpdateRequest
+from app.schemas.users import (
+    SettlementAccountRequest,
+    UserSearchResponse,
+    UserUpdateRequest,
+)
 
 
 USER_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -43,6 +48,42 @@ class FakeCursor:
 class FakeConnection:
     def __init__(self, row=None, error=None):
         self.cursor_instance = FakeCursor(row, error)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def cursor(self, row_factory=None):
+        return self.cursor_instance
+
+
+class SearchCursor:
+    def __init__(self, fetchone_rows, fetchall_rows):
+        self.fetchone_rows = list(fetchone_rows)
+        self.fetchall_rows = fetchall_rows
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def execute(self, query, params):
+        self.calls.append((query, params))
+
+    def fetchone(self):
+        return self.fetchone_rows.pop(0)
+
+    def fetchall(self):
+        return self.fetchall_rows
+
+
+class SearchConnection:
+    def __init__(self, fetchone_rows, fetchall_rows):
+        self.cursor_instance = SearchCursor(fetchone_rows, fetchall_rows)
 
     def __enter__(self):
         return self
@@ -213,6 +254,61 @@ class UserUpdateTest(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 503)
         self.assertNotIn("secret", context.exception.message)
+
+
+class UserSearchTest(unittest.TestCase):
+    def test_search_returns_only_verified_other_user_minimal_fields(self):
+        target_id = UUID("22222222-2222-2222-2222-222222222222")
+        connection = SearchConnection(
+            fetchone_rows=[{"dorm_verified": True}],
+            fetchall_rows=[{"user_id": target_id, "room_number": "717-2"}],
+        )
+
+        with patch("app.routers.users.get_connection", return_value=connection):
+            result = search_users("717-2", USER_ID)
+
+        self.assertEqual(result["data"][0].user_id, target_id)
+        self.assertEqual(result["data"][0].room_number, "717-2")
+        self.assertEqual(
+            set(UserSearchResponse.model_fields),
+            {"user_id", "room_number"},
+        )
+        self.assertEqual(
+            connection.cursor_instance.calls[1][1],
+            ("717-2", USER_ID),
+        )
+        query = connection.cursor_instance.calls[1][0]
+        self.assertIn("dorm_verified = TRUE", query)
+        self.assertNotIn("account_number", query)
+
+    def test_unverified_requester_cannot_search_users(self):
+        connection = SearchConnection(
+            fetchone_rows=[{"dorm_verified": False}],
+            fetchall_rows=[],
+        )
+
+        with patch("app.routers.users.get_connection", return_value=connection):
+            with self.assertRaises(HTTPException) as context:
+                search_users("717-2", USER_ID)
+
+        self.assertEqual(context.exception.status_code, 403)
+        self.assertEqual(
+            context.exception.code,
+            "DORM_VERIFICATION_REQUIRED",
+        )
+
+    def test_search_excludes_requester_in_sql(self):
+        connection = SearchConnection(
+            fetchone_rows=[{"dorm_verified": True}],
+            fetchall_rows=[],
+        )
+
+        with patch("app.routers.users.get_connection", return_value=connection):
+            search_users("717-1", USER_ID)
+
+        query, params = connection.cursor_instance.calls[1]
+        self.assertIn("id <> %s", query)
+        self.assertEqual(params, ("717-1", USER_ID))
 
 
 if __name__ == "__main__":

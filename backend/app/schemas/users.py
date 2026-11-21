@@ -48,3 +48,8 @@ class UserResponse(BaseModel):
     dorm_verified: bool
     dorm_verified_at: datetime | None
     created_at: datetime
+
+
+class UserSearchResponse(BaseModel):
+    user_id: UUID
+    room_number: str
