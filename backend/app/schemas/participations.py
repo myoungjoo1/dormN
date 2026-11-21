@@ -21,3 +21,9 @@ class ParticipationQuoteResponse(BaseModel):
     quantity: int
     estimated_amount: int
     remaining_quantity_after_join: int
+
+
+class MyParticipationResponse(BaseModel):
+    is_joined: bool
+    participation_id: int | None
+    quantity: int | None

@@ -8,6 +8,7 @@ from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.participations import (
     ParticipationCreateRequest,
+    MyParticipationResponse,
     ParticipationQuoteResponse,
     ParticipationResponse,
 )
@@ -45,6 +46,37 @@ def _validate_post_for_participation(post, current_user_id: UUID):
             "Post recruitment deadline has passed",
         )
 
+
+@router.get(
+    "/{post_id}/participation/me",
+    response_model=ApiResponse[MyParticipationResponse],
+)
+def get_my_participation(
+    post_id: int,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    p.id IS NOT NULL AS is_joined,
+                    p.id AS participation_id,
+                    p.quantity
+                FROM public.posts AS post
+                LEFT JOIN public.participations AS p
+                    ON p.post_id = post.id
+                   AND p.user_id = %s
+                WHERE post.id = %s
+                """,
+                (current_user_id, post_id),
+            )
+            row = cursor.fetchone()
+
+    if row is None:
+        raise ApiException(404, "POST_NOT_FOUND", "Post not found")
+
+    return {"data": MyParticipationResponse.model_validate(row)}
 
 @router.post(
     "/{post_id}/quote",

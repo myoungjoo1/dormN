@@ -74,6 +74,20 @@ class _PostListPageState extends State<PostListPage> {
     }
   }
 
+  Future<void> _openPostCreate() async {
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(builder: (_) => const PostCreatePage()),
+    );
+    if (!mounted || result == null) return;
+
+    setState(() => _selectedFilter = 0);
+    await _loadPosts();
+    if (mounted && _postsError == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('공동구매가 등록되었습니다.')));
+    }
+  }
+
   List<Post> get _visiblePosts {
     final now = DateTime.now();
     if (_selectedFilter == 1) {
@@ -97,11 +111,7 @@ class _PostListPageState extends State<PostListPage> {
       floatingActionButton: FloatingActionButton(
         backgroundColor: _blue,
         foregroundColor: Colors.white,
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PostCreatePage()),
-          );
-        },
+        onPressed: _openPostCreate,
         child: const Icon(Icons.add, size: 32),
       ),
       bottomNavigationBar: NavigationBar(
@@ -131,9 +141,7 @@ class _PostListPageState extends State<PostListPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: _buildFeed(),
-      ),
+      body: SafeArea(child: _buildFeed()),
     );
   }
 
@@ -179,19 +187,21 @@ class _PostListPageState extends State<PostListPage> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _PostCard(
                   post: post,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PostDetailPage(postId: post.id),
-                      ),
-                    );
-                  },
+                  onTap: () => _openPostDetail(post),
                 ),
               ),
             ),
         ],
       ),
     );
+  }
+
+  Future<void> _openPostDetail(Post post) async {
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(builder: (_) => PostDetailPage(postId: post.id)),
+    );
+    if (!mounted || result?['changed'] != true) return;
+    await _loadPosts();
   }
 }
 
@@ -424,12 +434,18 @@ class _PostCard extends StatelessWidget {
                 post.productName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 10),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF2F5FF),
                   borderRadius: BorderRadius.circular(8),
