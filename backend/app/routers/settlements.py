@@ -5,7 +5,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.api import ApiException, ApiResponse
-from app.auth import get_current_user_id
+from app.auth import get_current_verified_user_id
 from app.database import get_connection
 from app.schemas.settlements import (
     HostSettlementListResponse,
@@ -43,7 +43,7 @@ POST_SETTLEMENT_ACCOUNT_STATUSES = {
 )
 def confirm_post_settlement_account(
     post_id: int,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     try:
         with get_connection() as conn:
@@ -147,7 +147,7 @@ def confirm_post_settlement_account(
 )
 def get_post_settlement_account(
     post_id: int,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     try:
         with get_connection() as conn:
@@ -225,7 +225,7 @@ def get_post_settlement_account(
 )
 def get_my_settlement(
     post_id: int,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
@@ -254,7 +254,7 @@ def get_my_settlement(
 )
 def mark_settlement_sent(
     settlement_id: int,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
@@ -326,7 +326,7 @@ def mark_settlement_sent(
 )
 def confirm_settlement(
     settlement_id: int,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
@@ -377,7 +377,7 @@ def confirm_settlement(
 )
 def get_host_settlements(
     post_id: int,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:

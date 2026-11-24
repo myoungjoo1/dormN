@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -27,11 +29,48 @@ class _ChatRoomListPageState extends State<ChatRoomListPage> {
   bool _isLoading = true;
   bool _isDormVerificationRequired = false;
   String? _error;
+  String? _activeUserId;
+  int _roomsRequestVersion = 0;
+  StreamSubscription<AuthState>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
+    _listenToAuthState();
     _loadRooms();
+  }
+
+  void _listenToAuthState() {
+    try {
+      _authSubscription = Supabase.instance.client.auth.onAuthStateChange
+          .listen((state) {
+            if (!mounted) return;
+            final session = state.session;
+            if (session == null) {
+              _roomsRequestVersion += 1;
+              _activeUserId = null;
+              setState(() {
+                _rooms = [];
+                _error = '로그인이 필요합니다. 다시 로그인해주세요.';
+                _isDormVerificationRequired = false;
+                _isLoading = false;
+              });
+              return;
+            }
+            if (_activeUserId != null && _activeUserId != session.user.id) {
+              _roomsRequestVersion += 1;
+              _activeUserId = session.user.id;
+              setState(() {
+                _rooms = [];
+                _error = null;
+                _isDormVerificationRequired = false;
+              });
+              unawaited(_loadRooms());
+            }
+          });
+    } catch (_) {
+      // AuthGate remains the source of truth when the auth stream is unavailable.
+    }
   }
 
   List<ChatRoom> get _visibleRooms {
@@ -46,6 +85,7 @@ class _ChatRoomListPageState extends State<ChatRoomListPage> {
   }
 
   Future<void> _loadRooms() async {
+    final requestVersion = ++_roomsRequestVersion;
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -55,8 +95,10 @@ class _ChatRoomListPageState extends State<ChatRoomListPage> {
     }
 
     final session = _currentSession();
+    final userId = session?.user.id;
+    _activeUserId = userId;
     if (session == null) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _roomsRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = '로그인이 필요합니다. 다시 로그인해주세요.';
@@ -66,13 +108,17 @@ class _ChatRoomListPageState extends State<ChatRoomListPage> {
 
     try {
       final rooms = await _api.getChatRooms(accessToken: session.accessToken);
-      if (!mounted) return;
+      if (!mounted ||
+          requestVersion != _roomsRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        return;
+      }
       setState(() {
         _rooms = rooms;
         _isLoading = false;
       });
     } on ApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _roomsRequestVersion) return;
       setState(() {
         _isLoading = false;
         _isDormVerificationRequired =
@@ -80,12 +126,18 @@ class _ChatRoomListPageState extends State<ChatRoomListPage> {
         _error = _roomErrorMessage(error);
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _roomsRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = '채팅방 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.';
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   Session? _currentSession() {
@@ -117,23 +169,21 @@ class _ChatRoomListPageState extends State<ChatRoomListPage> {
   }
 
   void _openRoom(ChatRoom room) {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => ChatRoomPage(room: room)),
-    );
+    Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => ChatRoomPage(room: room)));
   }
 
   Future<void> _startDirectChat() async {
-    final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const UserSearchPage()),
-    );
+    final changed = await Navigator.of(context)
+        .push<bool>(MaterialPageRoute(builder: (_) => const UserSearchPage()));
     if (!mounted || changed != true) return;
     await _loadRooms();
   }
 
   Future<void> _openMypage() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const MypagePage()),
-    );
+    await Navigator.of(context)
+        .push<void>(MaterialPageRoute(builder: (_) => const MypagePage()));
   }
 
   void _selectNavigation(int index) {
@@ -232,10 +282,7 @@ class _ChatRoomListPageState extends State<ChatRoomListPage> {
             ...rooms.map(
               (room) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: _ChatRoomCard(
-                  room: room,
-                  onTap: () => _openRoom(room),
-                ),
+                child: _ChatRoomCard(room: room, onTap: () => _openRoom(room)),
               ),
             ),
         ],
@@ -245,10 +292,7 @@ class _ChatRoomListPageState extends State<ChatRoomListPage> {
 }
 
 class _FilterRow extends StatelessWidget {
-  const _FilterRow({
-    required this.selectedFilter,
-    required this.onSelected,
-  });
+  const _FilterRow({required this.selectedFilter, required this.onSelected});
 
   final _ChatFilter selectedFilter;
   final ValueChanged<_ChatFilter> onSelected;
@@ -323,7 +367,9 @@ class _ChatRoomCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isGroup = room.isGroup;
-    final title = isGroup ? room.productName ?? '공동구매 채팅방' : room.otherUserRoomNumber ?? '1:1 채팅';
+    final title = isGroup
+        ? room.productName ?? '공동구매 채팅방'
+        : room.otherUserRoomNumber ?? '1:1 채팅';
     final subtitle = isGroup ? '공동구매 참여자 단체 채팅방' : '1:1 채팅방';
 
     return Material(
@@ -384,10 +430,7 @@ class _ChatRoomCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: Color(0xFF9AA3B2),
-              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF9AA3B2)),
             ],
           ),
         ),
@@ -423,9 +466,7 @@ class _EmptyRooms extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            filtered
-                ? '다른 필터를 선택해보세요.'
-                : '공동구매에 참여하거나 1:1 채팅을 시작해보세요.',
+            filtered ? '다른 필터를 선택해보세요.' : '공동구매에 참여하거나 1:1 채팅을 시작해보세요.',
             style: TextStyle(color: Color(0xFF697386), fontSize: 12),
           ),
         ],
@@ -453,7 +494,11 @@ class _ErrorRooms extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.chat_bubble_outline_rounded, size: 44, color: Color(0xFF8A92A5)),
+            const Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 44,
+              color: Color(0xFF8A92A5),
+            ),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
             if (showRetry) ...[

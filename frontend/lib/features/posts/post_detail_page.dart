@@ -98,9 +98,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 
   bool get _canViewChat {
-    return _post != null &&
-        _currentUserId != null &&
-        (_isAuthor || _isJoined);
+    return _post != null && _currentUserId != null && (_isAuthor || _isJoined);
   }
 
   @override
@@ -141,8 +139,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
         try {
           final loader = widget.participationLoader ?? _api.getMyParticipation;
           myParticipation = await loader(widget.postId, accessToken);
-        } on ApiException {
-          participationError = '참여 여부를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.';
+        } on ApiException catch (error) {
+          participationError = error.code == 'DORM_VERIFICATION_REQUIRED'
+              ? '기숙사 인증을 완료한 사용자만 공동구매에 참여할 수 있어요.'
+              : '참여 여부를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.';
         } catch (_) {
           participationError = '참여 여부를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.';
         }
@@ -407,6 +407,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
       case 'AUTH_REQUIRED':
       case 'INVALID_ACCESS_TOKEN':
         return '참여하려면 로그인이 필요합니다.';
+      case 'DORM_VERIFICATION_REQUIRED':
+        return '기숙사 인증을 완료한 사용자만 공동구매에 참여할 수 있어요.';
       default:
         return '공동구매 참여에 실패했습니다. 잠시 후 다시 시도해주세요.';
     }
@@ -418,9 +420,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final page = _isAuthor
         ? HostSettlementPage(postId: post.id)
         : MySettlementPage(postId: post.id);
-    final result = await Navigator.of(context).push<Map<String, dynamic>>(
-      MaterialPageRoute(builder: (_) => page),
-    );
+    final result = await Navigator.of(context)
+        .push<Map<String, dynamic>>(MaterialPageRoute(builder: (_) => page));
     if (!mounted || result?['changed'] != true) return;
     setState(() => _hasChanges = true);
     await _loadPost();
@@ -494,7 +495,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final post = _post;
     final showJoinBar = post != null && _currentUserId != null && !_isAuthor;
     final settlementBar = _canViewSettlement ? _buildSettlementBar() : null;
-    final bottomBar = settlementBar ??
+    final bottomBar =
+        settlementBar ??
         (!showJoinBar
             ? null
             : _isJoined

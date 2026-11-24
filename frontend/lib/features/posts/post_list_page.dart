@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -23,32 +25,82 @@ class _PostListPageState extends State<PostListPage> {
   final _api = const DormNApi();
   List<Post> _posts = [];
   String? _roomNumber;
+  bool? _dormVerified;
   String? _postsError;
   bool _isPostsLoading = true;
   int _selectedFilter = 0;
+  String? _activeUserId;
+  int _profileRequestVersion = 0;
+  int _postsRequestVersion = 0;
+  StreamSubscription<AuthState>? _authSubscription;
 
   SupabaseClient get _supabase => Supabase.instance.client;
 
   @override
   void initState() {
     super.initState();
+    _listenToAuthState();
     _loadMyProfile();
     _loadPosts();
+  }
+
+  void _listenToAuthState() {
+    _authSubscription = _supabase.auth.onAuthStateChange.listen((state) {
+      if (!mounted) return;
+      final session = state.session;
+      if (session == null) {
+        _profileRequestVersion += 1;
+        _activeUserId = null;
+        setState(() {
+          _roomNumber = null;
+          _dormVerified = null;
+        });
+        return;
+      }
+      if (_activeUserId != null && _activeUserId != session.user.id) {
+        _profileRequestVersion += 1;
+        _activeUserId = session.user.id;
+        setState(() {
+          _roomNumber = null;
+          _dormVerified = null;
+        });
+        unawaited(_loadMyProfile());
+        unawaited(_loadPosts());
+      }
+    });
   }
 
   Future<void> _loadMyProfile() async {
     final session = _supabase.auth.currentSession;
     if (session == null) return;
+    final requestVersion = ++_profileRequestVersion;
+    final userId = session.user.id;
+    _activeUserId = userId;
 
     try {
       final profile = await _api.getMyProfile(session.accessToken);
-      if (mounted) setState(() => _roomNumber = profile.roomNumber);
+      if (!mounted ||
+          requestVersion != _profileRequestVersion ||
+          _supabase.auth.currentUser?.id != userId) {
+        return;
+      }
+      setState(() {
+        _roomNumber = profile.roomNumber;
+        _dormVerified = profile.dormVerified;
+      });
     } catch (_) {
       // The feed remains usable even when the optional room label fails to load.
     }
   }
 
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadPosts() async {
+    final requestVersion = ++_postsRequestVersion;
     setState(() {
       _isPostsLoading = true;
       _postsError = null;
@@ -56,19 +108,19 @@ class _PostListPageState extends State<PostListPage> {
 
     try {
       final posts = await _api.getPosts();
-      if (!mounted) return;
+      if (!mounted || requestVersion != _postsRequestVersion) return;
       setState(() {
         _isPostsLoading = false;
         _posts = posts;
       });
     } on ApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _postsRequestVersion) return;
       setState(() {
         _isPostsLoading = false;
         _postsError = error.message;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _postsRequestVersion) return;
       setState(() {
         _isPostsLoading = false;
         _postsError = '공동구매 목록 연결 실패\n$error';
@@ -77,6 +129,14 @@ class _PostListPageState extends State<PostListPage> {
   }
 
   Future<void> _openPostCreate() async {
+    if (_dormVerified != true) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('기숙사 인증을 완료한 사용자만 공동구매를 등록할 수 있어요.')),
+        );
+      return;
+    }
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(builder: (_) => const PostCreatePage()),
     );
@@ -91,15 +151,15 @@ class _PostListPageState extends State<PostListPage> {
   }
 
   Future<void> _openChat() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const ChatRoomListPage()),
-    );
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const ChatRoomListPage()));
   }
 
   Future<void> _openMypage() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const MypagePage()),
-    );
+    await Navigator.of(context)
+        .push<void>(MaterialPageRoute(builder: (_) => const MypagePage()));
+    if (mounted) await _loadMyProfile();
   }
 
   List<Post> get _visiblePosts {

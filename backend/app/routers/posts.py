@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, status
 from psycopg.rows import dict_row
 
 from app.api import ApiException, ApiResponse
-from app.auth import get_current_user_id
+from app.auth import get_current_verified_user_id
 from app.database import get_connection
 from app.routers.chat import connection_manager
 from app.schemas.posts import (
@@ -43,7 +43,7 @@ POST_STATUS_TRANSITIONS = {
 )
 def create_post(
     post: PostCreateRequest,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     image_url = None
     if post.image_upload_id is None and post.product_url is not None:
@@ -214,7 +214,7 @@ def update_post_status(
     post_id: int,
     status_update: PostStatusUpdateRequest,
     background_tasks: BackgroundTasks,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     chat_event = None
     with get_connection() as conn:

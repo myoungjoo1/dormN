@@ -29,6 +29,7 @@ class _MypagePageState extends State<MypagePage> {
   bool _isLoading = true;
   bool _isSigningOut = false;
   StreamSubscription<AuthState>? _authSubscription;
+  int _profileRequestVersion = 0;
 
   @override
   void initState() {
@@ -39,29 +40,31 @@ class _MypagePageState extends State<MypagePage> {
 
   void _listenToAuthState() {
     try {
-      _authSubscription =
-          Supabase.instance.client.auth.onAuthStateChange.listen((state) {
-        if (!mounted) return;
-        final session = state.session;
-        if (session == null) {
-          setState(() {
-            _profile = null;
-            _provider = null;
-            _error = '로그인이 필요합니다. 다시 로그인해주세요.';
+      _authSubscription = Supabase.instance.client.auth.onAuthStateChange
+          .listen((state) {
+            if (!mounted) return;
+            final session = state.session;
+            if (session == null) {
+              _profileRequestVersion += 1;
+              setState(() {
+                _profile = null;
+                _provider = null;
+                _error = '로그인이 필요합니다. 다시 로그인해주세요.';
+              });
+              Navigator.of(context).popUntil((route) => route.isFirst);
+              return;
+            }
+            if (_profile?.id != session.user.id) {
+              unawaited(_loadProfile());
+            }
           });
-          Navigator.of(context).popUntil((route) => route.isFirst);
-          return;
-        }
-        if (_profile?.id != session.user.id && !_isLoading) {
-          unawaited(_loadProfile());
-        }
-      });
     } catch (_) {
       // AuthGate remains the source of truth when the auth stream is unavailable.
     }
   }
 
   Future<void> _loadProfile() async {
+    final requestVersion = ++_profileRequestVersion;
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -72,10 +75,10 @@ class _MypagePageState extends State<MypagePage> {
     }
 
     final auth = _currentAuth();
-    final session = auth?.currentSession;
+    final session = auth?.auth.currentSession;
     final userId = session?.user.id;
     if (session == null) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _profileRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = '로그인이 필요합니다. 다시 로그인해주세요.';
@@ -85,20 +88,24 @@ class _MypagePageState extends State<MypagePage> {
 
     try {
       final profile = await _api.getMyProfile(session.accessToken);
-      if (!mounted || _currentAuth()?.auth.currentUser?.id != userId) return;
+      if (!mounted ||
+          requestVersion != _profileRequestVersion ||
+          _currentAuth()?.auth.currentUser?.id != userId) {
+        return;
+      }
       setState(() {
         _profile = profile;
-        _provider = _providerLabel(auth?.currentUser);
+        _provider = _providerLabel(auth?.auth.currentUser);
         _isLoading = false;
       });
     } on ApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _profileRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = _profileErrorMessage(error);
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _profileRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = '사용자 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.';
@@ -162,16 +169,14 @@ class _MypagePageState extends State<MypagePage> {
   }
 
   Future<void> _openChat() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const ChatRoomListPage()),
-    );
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const ChatRoomListPage()));
   }
 
   Future<void> _openHistory(PurchaseHistoryTab tab) async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => PurchaseHistoryPage(initialTab: tab),
-      ),
+      MaterialPageRoute(builder: (_) => PurchaseHistoryPage(initialTab: tab)),
     );
   }
 
@@ -179,7 +184,7 @@ class _MypagePageState extends State<MypagePage> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => const DormVerificationPage()),
     );
-    if (mounted) unawaited(_loadProfile());
+    if (mounted) await _loadProfile();
   }
 
   Future<void> _confirmSignOut() async {
@@ -427,26 +432,38 @@ class _ProfileCard extends StatelessWidget {
               children: [
                 Text(
                   profile.roomNumber ?? '호실 미등록',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 5),
                 Text(
                   provider,
-                  style: const TextStyle(color: Color(0xFF697386), fontSize: 12),
+                  style: const TextStyle(
+                    color: Color(0xFF697386),
+                    fontSize: 12,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Icon(
-                      verified ? Icons.verified_rounded : Icons.info_outline_rounded,
+                      verified
+                          ? Icons.verified_rounded
+                          : Icons.info_outline_rounded,
                       size: 16,
-                      color: verified ? const Color(0xFF1D9B55) : const Color(0xFFB57900),
+                      color: verified
+                          ? const Color(0xFF1D9B55)
+                          : const Color(0xFFB57900),
                     ),
                     const SizedBox(width: 5),
                     Text(
                       verified ? '기숙사 인증 완료' : '기숙사 인증 필요',
                       style: TextStyle(
-                        color: verified ? const Color(0xFF1D9B55) : const Color(0xFFB57900),
+                        color: verified
+                            ? const Color(0xFF1D9B55)
+                            : const Color(0xFFB57900),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -517,11 +534,17 @@ class _MenuCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      style: const TextStyle(color: Color(0xFF697386), fontSize: 11),
+                      style: const TextStyle(
+                        color: Color(0xFF697386),
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                 ),

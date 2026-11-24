@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -9,6 +10,8 @@ from app.api import ApiException, ApiResponse
 from app.auth import get_current_user_id
 from app.database import get_connection
 from app.schemas.users import (
+    LocationCheckRequest,
+    LocationVerificationResponse,
     ROOM_NUMBER_PATTERN,
     SettlementAccountRequest,
     SettlementAccountResponse,
@@ -18,9 +21,65 @@ from app.schemas.users import (
 )
 from app.schemas.posts import PostRecruitmentResponse
 from app.schemas.participations import MyParticipationHistoryResponse
+from app.services.location_verification import (
+    LOCATION_STATUS_COMPLETED,
+    LocationCheckRejected,
+    LocationProgress,
+    LocationVerificationConfigurationError,
+    apply_location_check,
+    build_location_verification_response,
+    get_location_verification_policy,
+    is_verification_window_open,
+    is_within_allowed_radius,
+    to_korea_time,
+)
 
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+LOCATION_PROGRESS_COLUMNS = """
+    verification_date,
+    status,
+    valid_check_count,
+    first_valid_at,
+    last_valid_at,
+    last_check_at,
+    completed_at
+"""
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _location_policy_or_error():
+    try:
+        return get_location_verification_policy()
+    except LocationVerificationConfigurationError as exc:
+        raise ApiException(
+            500,
+            "LOCATION_VERIFICATION_CONFIGURATION_ERROR",
+            str(exc),
+        ) from exc
+
+
+def _location_progress_query(*, for_update: bool = False) -> str:
+    suffix = " FOR UPDATE" if for_update else ""
+    return f"""
+        SELECT {LOCATION_PROGRESS_COLUMNS}
+        FROM dormn_private.location_verifications
+        WHERE user_id = %s
+        {suffix}
+    """
+
+
+def _raise_location_database_error(exc: psycopg.Error) -> None:
+    raise ApiException(
+        503,
+        "LOCATION_VERIFICATION_UNAVAILABLE",
+        "Location verification service is temporarily unavailable",
+    ) from exc
 
 
 POST_HISTORY_SELECT = """
@@ -177,6 +236,245 @@ def get_my_participations(current_user_id: UUID = Depends(get_current_user_id)):
             for row in rows
         ]
     }
+
+
+@router.post(
+    "/me/location-check",
+    response_model=ApiResponse[LocationVerificationResponse],
+)
+def check_my_location(
+    location: LocationCheckRequest,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    policy = _location_policy_or_error()
+    now = _utc_now()
+
+    if not is_verification_window_open(now):
+        try:
+            with get_connection() as conn:
+                with conn.cursor(row_factory=dict_row) as cursor:
+                    cursor.execute(
+                        _location_progress_query(for_update=True),
+                        (current_user_id,),
+                    )
+                    row = cursor.fetchone()
+                    if row is not None and row["status"] != LOCATION_STATUS_COMPLETED:
+                        cursor.execute(
+                            """
+                            UPDATE dormn_private.location_verifications
+                            SET status = 'EXPIRED', updated_at = NOW()
+                            WHERE user_id = %s
+                            """,
+                            (current_user_id,),
+                        )
+        except psycopg.Error as exc:
+            _raise_location_database_error(exc)
+        raise ApiException(
+            409,
+            "LOCATION_VERIFICATION_TIME_WINDOW_CLOSED",
+            "Location verification is available only from 00:00 to 03:00 KST",
+        )
+
+    if location.accuracy_meters > policy.max_accuracy_meters:
+        raise ApiException(
+            422,
+            "GPS_ACCURACY_TOO_LOW",
+            "GPS accuracy does not meet the verification policy",
+        )
+
+    in_allowed_radius = is_within_allowed_radius(
+        location.latitude,
+        location.longitude,
+        policy,
+    )
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO dormn_private.location_verifications (
+                        user_id,
+                        verification_date
+                    )
+                    VALUES (%s, %s)
+                    ON CONFLICT (user_id) DO NOTHING
+                    """,
+                    (current_user_id, to_korea_time(now).date()),
+                )
+                cursor.execute(
+                    _location_progress_query(for_update=True),
+                    (current_user_id,),
+                )
+                row = cursor.fetchone()
+                progress = LocationProgress.from_row(row)
+                try:
+                    message = apply_location_check(
+                        progress,
+                        now=now,
+                        policy=policy,
+                        in_allowed_radius=in_allowed_radius,
+                    )
+                except LocationCheckRejected as exc:
+                    raise ApiException(409, exc.code, exc.message) from exc
+
+                cursor.execute(
+                    """
+                    UPDATE dormn_private.location_verifications
+                    SET verification_date = %s,
+                        status = %s,
+                        valid_check_count = %s,
+                        first_valid_at = %s,
+                        last_valid_at = %s,
+                        last_check_at = %s,
+                        completed_at = %s,
+                        updated_at = NOW()
+                    WHERE user_id = %s
+                    """,
+                    (
+                        progress.verification_date,
+                        progress.status,
+                        progress.valid_check_count,
+                        progress.first_valid_at,
+                        progress.last_valid_at,
+                        progress.last_check_at,
+                        progress.completed_at,
+                        current_user_id,
+                    ),
+                )
+    except psycopg.Error as exc:
+        _raise_location_database_error(exc)
+
+    return {
+        "data": LocationVerificationResponse.model_validate(
+            build_location_verification_response(
+                progress,
+                policy=policy,
+                now=now,
+                message=message,
+            )
+        )
+    }
+
+
+@router.get(
+    "/me/location-verification",
+    response_model=ApiResponse[LocationVerificationResponse],
+)
+def get_my_location_verification(
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    policy = _location_policy_or_error()
+    now = _utc_now()
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(
+                    _location_progress_query(),
+                    (current_user_id,),
+                )
+                row = cursor.fetchone()
+    except psycopg.Error as exc:
+        _raise_location_database_error(exc)
+
+    progress = LocationProgress.from_row(row)
+    return {
+        "data": LocationVerificationResponse.model_validate(
+            build_location_verification_response(
+                progress,
+                policy=policy,
+                now=now,
+            )
+        )
+    }
+
+
+@router.post(
+    "/me/dorm-verification",
+    response_model=ApiResponse[UserResponse],
+)
+def complete_dorm_verification(
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    try:
+        with get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        u.id,
+                        u.room_number,
+                        u.dorm_verified,
+                        u.dorm_verified_at,
+                        u.created_at,
+                        location.status AS location_status
+                    FROM public.users AS u
+                    LEFT JOIN dormn_private.location_verifications AS location
+                        ON location.user_id = u.id
+                    WHERE u.id = %s
+                    FOR UPDATE OF u
+                    """,
+                    (current_user_id,),
+                )
+                row = cursor.fetchone()
+
+                if row is None:
+                    raise ApiException(
+                        404,
+                        "USER_PROFILE_NOT_FOUND",
+                        "User profile not found",
+                    )
+
+                if row["dorm_verified"]:
+                    return {
+                        "data": UserResponse.model_validate(row),
+                    }
+
+                if row["room_number"] is None or not row["room_number"].strip():
+                    raise ApiException(
+                        409,
+                        "ROOM_NUMBER_REQUIRED",
+                        "Room number registration is required",
+                    )
+
+                if row["location_status"] != LOCATION_STATUS_COMPLETED:
+                    raise ApiException(
+                        409,
+                        "GPS_VERIFICATION_REQUIRED",
+                        "Completed GPS stay verification is required",
+                    )
+
+                cursor.execute(
+                    """
+                    UPDATE public.users
+                    SET dorm_verified = TRUE,
+                        dorm_verified_at = COALESCE(dorm_verified_at, NOW())
+                    WHERE id = %s
+                    RETURNING
+                        id,
+                        room_number,
+                        dorm_verified,
+                        dorm_verified_at,
+                        created_at
+                    """,
+                    (current_user_id,),
+                )
+                updated_row = cursor.fetchone()
+
+                if updated_row is None:
+                    raise ApiException(
+                        503,
+                        "DORM_VERIFICATION_UNAVAILABLE",
+                        "Dorm verification could not be completed",
+                    )
+    except psycopg.Error as exc:
+        raise ApiException(
+            503,
+            "DORM_VERIFICATION_UNAVAILABLE",
+            "Dorm verification service is temporarily unavailable",
+        ) from exc
+
+    return {"data": UserResponse.model_validate(updated_row)}
 
 
 @router.get(

@@ -89,3 +89,31 @@ def get_current_user_id(
             )
 
     return user_id
+
+
+def get_current_verified_user_id(
+    current_user_id: UUID = Depends(get_current_user_id),
+) -> UUID:
+    """Require the current user's server-side dorm verification for services."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT dorm_verified
+                FROM public.users
+                WHERE id = %s
+                """,
+                (current_user_id,),
+            )
+            row = cursor.fetchone()
+
+    if row is None:
+        raise ApiException(404, "USER_NOT_FOUND", "User not found")
+    if not row[0]:
+        raise ApiException(
+            403,
+            "DORM_VERIFICATION_REQUIRED",
+            "Dorm verification is required to use this service",
+        )
+
+    return current_user_id

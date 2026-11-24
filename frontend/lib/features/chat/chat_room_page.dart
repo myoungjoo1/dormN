@@ -49,9 +49,10 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   StreamSubscription<ChatMessage>? _webSocketMessageSubscription;
   StreamSubscription<ChatWebSocketStatus>? _webSocketStatusSubscription;
   StreamSubscription<AuthState>? _authStateSubscription;
+  String? _activeSessionUserId;
+  int _loadRequestVersion = 0;
 
-  bool get _isGroupStatusUnknown =>
-      widget.room.isGroup && _postStatus == null;
+  bool get _isGroupStatusUnknown => widget.room.isGroup && _postStatus == null;
 
   bool get _isReadOnly =>
       widget.room.isGroup &&
@@ -100,6 +101,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     bool recoverMissedMessages = false,
     bool connectWebSocket = true,
   }) async {
+    final requestVersion = ++_loadRequestVersion;
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -110,8 +112,10 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     }
 
     final session = _currentSession();
+    final userId = session?.user.id;
+    _activeSessionUserId = userId;
     if (session == null) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _loadRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = '로그인이 필요합니다. 다시 로그인해주세요.';
@@ -128,30 +132,37 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     if (widget.room.isGroup && widget.room.postId != null) {
       try {
         final post = await _api.getPost(widget.room.postId!);
+        if (!mounted || requestVersion != _loadRequestVersion) return;
         _postStatus = post.status;
       } on ApiException catch (error) {
+        if (!mounted || requestVersion != _loadRequestVersion) return;
         _statusError = _errorMessage(error);
       } catch (_) {
+        if (!mounted || requestVersion != _loadRequestVersion) return;
         _statusError = '거래 상태를 확인하지 못해 메시지를 보낼 수 없습니다.';
       }
     }
 
     try {
       final knownMessageIds = _messages.map((message) => message.id).toSet();
-      final lastKnownMessageId =
-          _messages.isEmpty ? null : _messages.last.id;
+      final lastKnownMessageId = _messages.isEmpty ? null : _messages.last.id;
       var messages = await _api.getRoomMessages(
         roomId: widget.room.id,
         accessToken: session.accessToken,
       );
       if (!mounted) return;
+      if (requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        return;
+      }
 
       var mergedMessages = _mergeMessages(_messages, messages);
       var recoveryIncomplete = false;
       var recoveryFailed = false;
       var recoveryPageCount = 1;
       var recoveryPage = messages;
-      var reachedKnownHistory = lastKnownMessageId == null ||
+      var reachedKnownHistory =
+          lastKnownMessageId == null ||
           recoveryPage.any((message) => knownMessageIds.contains(message.id));
 
       while (recoverMissedMessages &&
@@ -170,8 +181,9 @@ class _ChatRoomPageState extends State<ChatRoomPage>
         }
         recoveryPageCount += 1;
         mergedMessages = _mergeMessages(mergedMessages, recoveryPage);
-        reachedKnownHistory =
-            recoveryPage.any((message) => knownMessageIds.contains(message.id));
+        reachedKnownHistory = recoveryPage.any(
+          (message) => knownMessageIds.contains(message.id),
+        );
       }
 
       if (recoverMissedMessages &&
@@ -182,8 +194,13 @@ class _ChatRoomPageState extends State<ChatRoomPage>
         recoveryIncomplete = true;
       }
 
-      final shouldJump = jumpToLatest &&
-          (_messages.isEmpty || _isNearBottom());
+      if (!mounted ||
+          requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        return;
+      }
+
+      final shouldJump = jumpToLatest && (_messages.isEmpty || _isNearBottom());
       mergedMessages = _mergeMessages(_messages, mergedMessages);
       setState(() {
         _messages = mergedMessages;
@@ -196,13 +213,13 @@ class _ChatRoomPageState extends State<ChatRoomPage>
         _showMessage('일부 메시지만 복구되었습니다. 위로 스크롤해 더 불러와주세요.');
       }
     } on ApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _loadRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = _errorMessage(error);
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _loadRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = '메시지를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.';
@@ -220,6 +237,8 @@ class _ChatRoomPageState extends State<ChatRoomPage>
 
     final session = _currentSession();
     if (session == null) return;
+    final requestVersion = _loadRequestVersion;
+    final userId = session.user.id;
 
     final previousPixels = _scrollController.hasClients
         ? _scrollController.position.pixels
@@ -238,6 +257,11 @@ class _ChatRoomPageState extends State<ChatRoomPage>
         beforeId: beforeId,
       );
       if (!mounted) return;
+      if (requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        setState(() => _isLoadingOlder = false);
+        return;
+      }
 
       final previousLength = _messages.length;
       final mergedMessages = _mergeMessages(_messages, messages);
@@ -260,11 +284,21 @@ class _ChatRoomPageState extends State<ChatRoomPage>
         _scrollController.jumpTo(target.toDouble());
       });
     } on ApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted ||
+          requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        if (mounted) setState(() => _isLoadingOlder = false);
+        return;
+      }
       setState(() => _isLoadingOlder = false);
       _showMessage(_errorMessage(error));
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted ||
+          requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        if (mounted) setState(() => _isLoadingOlder = false);
+        return;
+      }
       setState(() => _isLoadingOlder = false);
       _showMessage('이전 메시지를 불러오지 못했습니다. 다시 시도해주세요.');
     }
@@ -342,10 +376,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
 
     await _webSocket.disconnect();
     if (!mounted) return;
-    await _loadData(
-      jumpToLatest: false,
-      recoverMissedMessages: true,
-    );
+    await _loadData(jumpToLatest: false, recoverMissedMessages: true);
   }
 
   Future<void> _sendMessage() async {
@@ -375,6 +406,8 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       return;
     }
 
+    final requestVersion = _loadRequestVersion;
+    final userId = session.user.id;
     setState(() => _isSending = true);
     try {
       final sentMessage = await _api.sendChatMessage(
@@ -383,6 +416,11 @@ class _ChatRoomPageState extends State<ChatRoomPage>
         accessToken: session.accessToken,
       );
       if (!mounted) return;
+      if (requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        setState(() => _isSending = false);
+        return;
+      }
       setState(() {
         _messages = _mergeMessages(_messages, [sentMessage]);
         _isSending = false;
@@ -390,14 +428,24 @@ class _ChatRoomPageState extends State<ChatRoomPage>
       _messageController.clear();
       _jumpToLatest();
     } on ApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted ||
+          requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        if (mounted) setState(() => _isSending = false);
+        return;
+      }
       setState(() => _isSending = false);
       if (error.code == 'CHAT_ROOM_READ_ONLY') {
         await _refreshPostStatus();
       }
       if (mounted) _showMessage(_errorMessage(error));
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted ||
+          requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        if (mounted) setState(() => _isSending = false);
+        return;
+      }
       setState(() => _isSending = false);
       _showMessage('메시지를 보내지 못했습니다. 입력 내용은 유지됩니다.');
     }
@@ -453,17 +501,37 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _webSocketMessageSubscription =
-        _webSocket.messages.listen(_handleWebSocketMessage);
-    _webSocketStatusSubscription =
-        _webSocket.status.listen(_handleWebSocketStatus);
+    _webSocketMessageSubscription = _webSocket.messages.listen(
+      _handleWebSocketMessage,
+    );
+    _webSocketStatusSubscription = _webSocket.status.listen(
+      _handleWebSocketStatus,
+    );
     try {
-      _authStateSubscription =
-          Supabase.instance.client.auth.onAuthStateChange.listen((state) {
-        if (state.session == null) {
-          unawaited(_webSocket.disconnect());
-        }
-      });
+      _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange
+          .listen((state) {
+            final nextUserId = state.session?.user.id;
+            if (nextUserId != _activeSessionUserId) {
+              _loadRequestVersion += 1;
+              _activeSessionUserId = nextUserId;
+              unawaited(_webSocket.disconnect());
+              if (mounted) {
+                setState(() {
+                  _messages = [];
+                  _currentUserId = null;
+                  _postStatus = null;
+                  _isSending = false;
+                  _isLoadingOlder = false;
+                  _error = nextUserId == null
+                      ? '로그인이 필요합니다. 다시 로그인해주세요.'
+                      : null;
+                  _statusError = null;
+                  _isLoading = nextUserId != null;
+                });
+              }
+              if (nextUserId != null) unawaited(_loadData());
+            }
+          });
     } catch (_) {
       // The page still follows the current session for ordinary requests.
     }
@@ -590,12 +658,13 @@ class _ChatRoomPageState extends State<ChatRoomPage>
           itemCount: _messages.length,
           itemBuilder: (context, index) {
             final message = _messages[index];
-            final showDate = index == 0 ||
-                _isDifferentDate(_messages[index - 1], message);
+            final showDate =
+                index == 0 || _isDifferentDate(_messages[index - 1], message);
 
             return Column(
               children: [
-                if (showDate) _DateDivider(date: _formatDate(message.createdAt)),
+                if (showDate)
+                  _DateDivider(date: _formatDate(message.createdAt)),
                 _MessageBubble(
                   message: message,
                   isMine: _isMine(message),
@@ -610,7 +679,12 @@ class _ChatRoomPageState extends State<ChatRoomPage>
             top: 8,
             left: 0,
             right: 0,
-            child: Center(child: SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+            child: Center(
+              child: SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
           ),
       ],
     );
@@ -673,8 +747,9 @@ class _MessageBubble extends StatelessWidget {
     );
 
     final messageContent = Column(
-      crossAxisAlignment:
-          isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isMine
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         if (!isMine)
           Padding(
@@ -698,11 +773,7 @@ class _MessageBubble extends StatelessWidget {
                 child: CircleAvatar(
                   radius: 17,
                   backgroundColor: Color(0xFFE8EDFF),
-                  child: Icon(
-                    Icons.person_rounded,
-                    size: 19,
-                    color: _blue,
-                  ),
+                  child: Icon(Icons.person_rounded, size: 19, color: _blue),
                 ),
               ),
             bubble,
@@ -710,10 +781,7 @@ class _MessageBubble extends StatelessWidget {
               padding: EdgeInsets.only(left: isMine ? 7 : 0),
               child: Text(
                 time,
-                style: const TextStyle(
-                  color: Color(0xFF9AA3B2),
-                  fontSize: 10,
-                ),
+                style: const TextStyle(color: Color(0xFF9AA3B2), fontSize: 10),
               ),
             ),
           ],
@@ -875,18 +943,14 @@ class _ConnectionNotice extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: isConnecting
-          ? const Color(0xFFE9EDFF)
-          : const Color(0xFFFFEAEA),
+      color: isConnecting ? const Color(0xFFE9EDFF) : const Color(0xFFFFEAEA),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             message,
             style: TextStyle(
-              color: isConnecting
-                  ? _blue
-                  : const Color(0xFFB44D4D),
+              color: isConnecting ? _blue : const Color(0xFFB44D4D),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -923,7 +987,11 @@ class _MessageError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_rounded, size: 42, color: Color(0xFF8A92A5)),
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 42,
+              color: Color(0xFF8A92A5),
+            ),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 12),

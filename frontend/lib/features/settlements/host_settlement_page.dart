@@ -21,7 +21,7 @@ class HostSettlementPage extends StatefulWidget {
 }
 
 class _HostSettlementPageState extends State<HostSettlementPage> {
-  final _api = const DormnApi();
+  final _api = const DormNApi();
 
   Post? _post;
   HostSettlementSummary? _summary;
@@ -173,6 +173,8 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
 
   String _loadErrorMessage(String code) {
     switch (code) {
+      case 'DORM_VERIFICATION_REQUIRED':
+        return '기숙사 인증을 완료한 사용자만 정산 기능을 이용할 수 있어요.';
       case 'AUTH_REQUIRED':
       case 'INVALID_ACCESS_TOKEN':
         return '로그인이 필요합니다.';
@@ -187,6 +189,8 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
 
   String _pickupErrorMessage(String code) {
     switch (code) {
+      case 'DORM_VERIFICATION_REQUIRED':
+        return '기숙사 인증을 완료한 사용자만 픽업 기능을 이용할 수 있어요.';
       case 'AUTH_REQUIRED':
       case 'INVALID_ACCESS_TOKEN':
         return '로그인이 필요합니다.';
@@ -285,9 +289,7 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('입금 확인'),
-        content: Text(
-          (participant.roomNumber ?? '참여자') + '의 실제 입금을 확인했나요?',
-        ),
+        content: Text((participant.roomNumber ?? '참여자') + '의 실제 입금을 확인했나요?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -388,9 +390,7 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
   Future<void> _editAccount() async {
     if (_isAccountSaving) return;
     final account = _defaultAccount;
-    final bankController = TextEditingController(
-      text: account?.bankName ?? '',
-    );
+    final bankController = TextEditingController(text: account?.bankName ?? '');
     final numberController = TextEditingController(
       text: account?.accountNumber ?? '',
     );
@@ -436,11 +436,7 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
                   holderName.isEmpty) {
                 return;
               }
-              Navigator.of(context).pop([
-                bankName,
-                accountNumber,
-                holderName,
-              ]);
+              Navigator.of(context).pop([bankName, accountNumber, holderName]);
             },
             child: const Text('저장'),
           ),
@@ -720,9 +716,8 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
 
   void _popWithResult() {
     if (!mounted) return;
-    Navigator.of(context).pop(
-      _hasChanges ? <String, dynamic>{'changed': true} : null,
-    );
+    Navigator.of(context)
+        .pop(_hasChanges ? <String, dynamic>{'changed': true} : null);
   }
 
   String _confirmErrorMessage(String code) {
@@ -955,10 +950,7 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
                 '명 확인 · 미확인 금액 ' +
                 _pendingAmount.toString() +
                 '원',
-            style: const TextStyle(
-              color: Color(0xFF697386),
-              fontSize: 12,
-            ),
+            style: const TextStyle(color: Color(0xFF697386), fontSize: 12),
           ),
         ],
       ),
@@ -1024,10 +1016,7 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
               text: '모집 마감 후 거래별 계좌를 확정할 수 있습니다.',
             )
           else if (defaultAccount == null)
-            const _Notice(
-              icon: Icons.info_outline,
-              text: '기본 계좌를 먼저 등록해주세요.',
-            )
+            const _Notice(icon: Icons.info_outline, text: '기본 계좌를 먼저 등록해주세요.')
           else if (_accountConfirmationNeedsRefresh)
             const _Notice(
               icon: Icons.refresh_rounded,
@@ -1080,10 +1069,7 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
           const _SectionTitle(title: '참여자별 입금 현황'),
           const SizedBox(height: 10),
           if (summary.participants.isEmpty)
-            const _Notice(
-              icon: Icons.people_outline,
-              text: '아직 참여자가 없습니다.',
-            )
+            const _Notice(icon: Icons.people_outline, text: '아직 참여자가 없습니다.')
           else
             ...summary.participants.map(_buildParticipantTile),
         ],
@@ -1094,9 +1080,10 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
   Widget _buildParticipantTile(HostSettlementParticipant participant) {
     final settlementId = participant.settlementId;
     final isCancelled = _summary!.status == 'CANCELLED';
-    final isConfirming = settlementId != null &&
-        _confirmingSettlementIds.contains(settlementId);
-    final canConfirm = participant.paymentStatus == 'SENT' &&
+    final isConfirming =
+        settlementId != null && _confirmingSettlementIds.contains(settlementId);
+    final canConfirm =
+        participant.paymentStatus == 'SENT' &&
         settlementId != null &&
         !isConfirming;
     final amountText = participant.amount == null
@@ -1200,24 +1187,15 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
             const SizedBox(height: 8),
           ],
           if (totalCount == 0)
-            const _Notice(
-              icon: Icons.people_outline,
-              text: '픽업 대상 참여자가 없습니다.',
-            )
+            const _Notice(icon: Icons.people_outline, text: '픽업 대상 참여자가 없습니다.')
           else ...[
             Row(
               children: [
                 Expanded(
-                  child: _Metric(
-                    label: '전체 픽업 대상',
-                    value: '$totalCount명',
-                  ),
+                  child: _Metric(label: '전체 픽업 대상', value: '$totalCount명'),
                 ),
                 Expanded(
-                  child: _Metric(
-                    label: '수령 완료',
-                    value: '$completedCount명',
-                  ),
+                  child: _Metric(label: '수령 완료', value: '$completedCount명'),
                 ),
                 Expanded(
                   child: _Metric(
@@ -1240,10 +1218,7 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
             const SizedBox(height: 8),
             Text(
               '$completedCount/$totalCount명 수령 완료 · ${(progress * 100).round()}%',
-              style: const TextStyle(
-                color: Color(0xFF697386),
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Color(0xFF697386), fontSize: 12),
             ),
             const SizedBox(height: 4),
             ...pickupSummary.participants.map(_buildPickupParticipantTile),
@@ -1266,7 +1241,9 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
         children: [
           Icon(
             completed ? Icons.check_circle_outline : Icons.schedule_outlined,
-            color: completed ? const Color(0xFF087A35) : const Color(0xFF9A6100),
+            color: completed
+                ? const Color(0xFF087A35)
+                : const Color(0xFF9A6100),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1299,7 +1276,9 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
           Text(
             completed ? '완료' : '대기',
             style: TextStyle(
-              color: completed ? const Color(0xFF087A35) : const Color(0xFF9A6100),
+              color: completed
+                  ? const Color(0xFF087A35)
+                  : const Color(0xFF9A6100),
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
@@ -1374,10 +1353,7 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
           ),
           if (summary.status == 'CANCELLED') ...[
             const SizedBox(height: 12),
-            const _Notice(
-              icon: Icons.cancel_outlined,
-              text: '이 거래는 취소되었습니다.',
-            ),
+            const _Notice(icon: Icons.cancel_outlined, text: '이 거래는 취소되었습니다.'),
           ],
         ],
       ),
@@ -1387,7 +1363,8 @@ class _HostSettlementPageState extends State<HostSettlementPage> {
   Widget _buildBottomBar() {
     final nextStatus = _nextStatus;
     final hasAction = nextStatus != null;
-    final canAdvance = hasAction &&
+    final canAdvance =
+        hasAction &&
         !_isStatusUpdating &&
         (_summary!.status != 'CLOSED' || _allSettlementsConfirmed);
     return SafeArea(
@@ -1567,10 +1544,7 @@ class _Notice extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                color: Color(0xFF697386),
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Color(0xFF697386), fontSize: 12),
             ),
           ),
         ],
@@ -1594,18 +1568,22 @@ class _PaymentBadge extends StatelessWidget {
         color: confirmed
             ? const Color(0xFFD9FFE5)
             : cancelled
-                ? const Color(0xFFE8EAF0)
-                : const Color(0xFFFFF0D8),
+            ? const Color(0xFFE8EAF0)
+            : const Color(0xFFFFF0D8),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        cancelled ? '거래 취소' : confirmed ? '확인 완료' : '송금 대기',
+        cancelled
+            ? '거래 취소'
+            : confirmed
+            ? '확인 완료'
+            : '송금 대기',
         style: TextStyle(
           color: confirmed
               ? const Color(0xFF087A35)
               : cancelled
-                  ? const Color(0xFF697386)
-                  : const Color(0xFF9A6100),
+              ? const Color(0xFF697386)
+              : const Color(0xFF9A6100),
           fontSize: 11,
           fontWeight: FontWeight.w800,
         ),
@@ -1630,10 +1608,7 @@ class _ErrorState extends StatelessWidget {
           children: [
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: onRetry,
-              child: const Text('다시 시도'),
-            ),
+            OutlinedButton(onPressed: onRetry, child: const Text('다시 시도')),
           ],
         ),
       ),

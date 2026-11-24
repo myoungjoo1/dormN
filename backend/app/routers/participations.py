@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, status
 from psycopg.rows import dict_row
 
 from app.api import ApiException, ApiResponse
-from app.auth import get_current_user_id
+from app.auth import get_current_verified_user_id
 from app.database import get_connection
 from app.schemas.participations import (
     ParticipationCreateRequest,
@@ -53,7 +53,7 @@ def _validate_post_for_participation(post, current_user_id: UUID):
 )
 def get_my_participation(
     post_id: int,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
@@ -85,7 +85,7 @@ def get_my_participation(
 def quote_participation(
     post_id: int,
     participation: ParticipationCreateRequest,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
 ):
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
@@ -160,7 +160,7 @@ def quote_participation(
 def join_post(
     post_id: int,
     participation: ParticipationCreateRequest,
-    current_user_id: UUID = Depends(get_current_user_id),
+    current_user_id: UUID = Depends(get_current_verified_user_id),
     *,
     background_tasks: BackgroundTasks = None,
 ):

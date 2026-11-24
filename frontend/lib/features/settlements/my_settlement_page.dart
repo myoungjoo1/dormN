@@ -20,7 +20,7 @@ class MySettlementPage extends StatefulWidget {
 }
 
 class _MySettlementPageState extends State<MySettlementPage> {
-  final _api = const DormnApi();
+  final _api = const DormNApi();
 
   Post? _post;
   Settlement? _settlement;
@@ -157,6 +157,8 @@ class _MySettlementPageState extends State<MySettlementPage> {
 
   String _loadErrorMessage(String code) {
     switch (code) {
+      case 'DORM_VERIFICATION_REQUIRED':
+        return '기숙사 인증을 완료한 사용자만 정산 기능을 이용할 수 있어요.';
       case 'AUTH_REQUIRED':
       case 'INVALID_ACCESS_TOKEN':
         return '로그인이 필요합니다.';
@@ -391,7 +393,8 @@ class _MySettlementPageState extends State<MySettlementPage> {
     );
     if (!mounted) return;
 
-    final pickupCompleted = previousSettlement.pickupCompletedAt == null &&
+    final pickupCompleted =
+        previousSettlement.pickupCompletedAt == null &&
         _settlement?.pickupCompletedAt != null;
     final postStatusChanged =
         _post?.status != null && _post!.status != previousPostStatus;
@@ -408,6 +411,8 @@ class _MySettlementPageState extends State<MySettlementPage> {
 
   String _pickupErrorMessage(String code) {
     switch (code) {
+      case 'DORM_VERIFICATION_REQUIRED':
+        return '기숙사 인증을 완료한 사용자만 픽업 기능을 이용할 수 있어요.';
       case 'POST_NOT_PICKUP':
         return '아직 상품을 수령할 수 있는 상태가 아닙니다.';
       case 'POST_ALREADY_COMPLETED':
@@ -426,6 +431,8 @@ class _MySettlementPageState extends State<MySettlementPage> {
 
   String _sentErrorMessage(String code) {
     switch (code) {
+      case 'DORM_VERIFICATION_REQUIRED':
+        return '기숙사 인증을 완료한 사용자만 정산 기능을 이용할 수 있어요.';
       case 'SETTLEMENT_NOT_FOUND':
         return '정산 정보가 아직 생성되지 않았습니다.';
       case 'SETTLEMENT_NOT_UNPAID':
@@ -471,9 +478,8 @@ class _MySettlementPageState extends State<MySettlementPage> {
 
   void _popWithResult() {
     if (!mounted) return;
-    Navigator.of(context).pop(
-      _hasChanges ? <String, dynamic>{'changed': true} : null,
-    );
+    Navigator.of(context)
+        .pop(_hasChanges ? <String, dynamic>{'changed': true} : null);
   }
 
   String _dateText(DateTime? value) {
@@ -499,21 +505,21 @@ class _MySettlementPageState extends State<MySettlementPage> {
         if (!didPop) _popWithResult();
       },
       child: Scaffold(
-      backgroundColor: _pageBackground,
-      appBar: AppBar(
         backgroundColor: _pageBackground,
-        elevation: 0,
-        leading: IconButton(
-          onPressed: _popWithResult,
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+        appBar: AppBar(
+          backgroundColor: _pageBackground,
+          elevation: 0,
+          leading: IconButton(
+            onPressed: _popWithResult,
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          ),
+          title: const Text(
+            '내 정산',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+          centerTitle: true,
         ),
-        title: const Text(
-          '내 정산',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-        ),
-        centerTitle: true,
-      ),
-      body: _buildBody(),
+        body: _buildBody(),
         bottomNavigationBar: _settlement == null ? null : _buildBottomBar(),
       ),
     );
@@ -727,7 +733,11 @@ class _MySettlementPageState extends State<MySettlementPage> {
                     ),
                     child: Center(
                       child: active
-                          ? const Icon(Icons.check, color: Colors.white, size: 16)
+                          ? const Icon(
+                              Icons.check,
+                              color: Colors.white,
+                              size: 16,
+                            )
                           : Text(
                               (step + 1).toString(),
                               style: const TextStyle(
@@ -770,19 +780,13 @@ class _MySettlementPageState extends State<MySettlementPage> {
           const SizedBox(height: 12),
           _InfoRow(label: '거래 상태', value: _postStatusLabel(status)),
           _InfoRow(label: '픽업 장소', value: post.pickupLocation),
-          _InfoRow(
-            label: '수령 수량',
-            value: '${settlement.quantity ?? 0}개',
-          ),
+          _InfoRow(label: '수령 수량', value: '${settlement.quantity ?? 0}개'),
           _InfoRow(
             label: '수령 상태',
             value: pickupCompletedAt == null ? '미수령' : '수령 완료',
           ),
           if (pickupCompletedAt != null)
-            _InfoRow(
-              label: '수령 완료 시각',
-              value: _dateText(pickupCompletedAt),
-            ),
+            _InfoRow(label: '수령 완료 시각', value: _dateText(pickupCompletedAt)),
           const SizedBox(height: 8),
           if (canCompletePickup)
             SizedBox(
@@ -896,9 +900,7 @@ class _MySettlementPageState extends State<MySettlementPage> {
               )
             : Center(
                 child: Text(
-                  isConfirmed
-                      ? '정산이 완료되었습니다.'
-                      : '모집자의 입금 확인을 기다리는 중입니다.',
+                  isConfirmed ? '정산이 완료되었습니다.' : '모집자의 입금 확인을 기다리는 중입니다.',
                   style: TextStyle(
                     color: isConfirmed ? _blue : const Color(0xFF697386),
                     fontWeight: FontWeight.w700,
@@ -1001,10 +1003,7 @@ class _Notice extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                color: Color(0xFF697386),
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Color(0xFF697386), fontSize: 12),
             ),
           ),
         ],
@@ -1029,10 +1028,7 @@ class _ErrorState extends StatelessWidget {
           children: [
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: onRetry,
-              child: const Text('다시 시도'),
-            ),
+            OutlinedButton(onPressed: onRetry, child: const Text('다시 시도')),
           ],
         ),
       ),

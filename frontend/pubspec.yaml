@@ -37,6 +37,7 @@ dependencies:
   http: ^1.2.0
   image_picker: ^1.2.4
   supabase_flutter: ^2.0.0
+  geolocator: ^14.1.2
 
 dev_dependencies:
   flutter_test:

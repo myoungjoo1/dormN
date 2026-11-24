@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/api/dormn_api.dart';
 import '../../models/user_profile.dart';
+import '../verification/location_verification_page.dart';
 
 const _blue = Color(0xFF3156D9);
 const _pageBackground = Color(0xFFF7F8FC);
@@ -20,11 +23,41 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
   UserProfile? _profile;
   String? _error;
   bool _isLoading = true;
+  String? _activeUserId;
+  int _profileRequestVersion = 0;
+  StreamSubscription<AuthState>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
+    _listenToAuthState();
     _loadProfile();
+  }
+
+  void _listenToAuthState() {
+    try {
+      _authSubscription = Supabase.instance.client.auth.onAuthStateChange
+          .listen((state) {
+            if (!mounted) return;
+            final session = state.session;
+            if (session == null) {
+              _profileRequestVersion += 1;
+              _activeUserId = null;
+              setState(() {
+                _profile = null;
+                _isLoading = false;
+                _error = '로그인이 필요합니다. 다시 로그인해주세요.';
+              });
+              return;
+            }
+            if (_activeUserId != null && _activeUserId != session.user.id) {
+              _activeUserId = session.user.id;
+              unawaited(_loadProfile());
+            }
+          });
+    } catch (_) {
+      // AuthGate remains the source of truth when the auth stream is unavailable.
+    }
   }
 
   Session? _currentSession() {
@@ -36,8 +69,10 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
   }
 
   Future<void> _loadProfile() async {
+    final requestVersion = ++_profileRequestVersion;
     final session = _currentSession();
     final userId = session?.user.id;
+    _activeUserId = userId;
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -47,7 +82,7 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
     }
 
     if (session == null || session.accessToken.isEmpty) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _profileRequestVersion) return;
       setState(() {
         _isLoading = false;
         _error = '로그인이 필요합니다. 다시 로그인해주세요.';
@@ -57,24 +92,42 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
 
     try {
       final profile = await _api.getMyProfile(session.accessToken);
-      if (!mounted || _currentSession()?.user.id != userId) return;
+      if (!mounted ||
+          requestVersion != _profileRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        return;
+      }
       setState(() {
         _profile = profile;
         _isLoading = false;
       });
     } on ApiException catch (error) {
-      if (!mounted || _currentSession()?.user.id != userId) return;
+      if (!mounted ||
+          requestVersion != _profileRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        return;
+      }
       setState(() {
         _isLoading = false;
         _error = _errorMessage(error);
       });
     } catch (_) {
-      if (!mounted || _currentSession()?.user.id != userId) return;
+      if (!mounted ||
+          requestVersion != _profileRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        return;
+      }
       setState(() {
         _isLoading = false;
         _error = '인증 상태를 확인하지 못했습니다. 다시 시도해주세요.';
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   String _errorMessage(ApiException error) {
@@ -85,6 +138,13 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
       default:
         return error.message;
     }
+  }
+
+  Future<void> _openLocationVerification() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const LocationVerificationPage()),
+    );
+    if (mounted) await _loadProfile();
   }
 
   @override
@@ -129,10 +189,7 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
 
     final profile = _profile;
     if (profile == null) {
-      return _ErrorState(
-        message: '사용자 정보를 찾을 수 없습니다.',
-        onRetry: _loadProfile,
-      );
+      return _ErrorState(message: '사용자 정보를 찾을 수 없습니다.', onRetry: _loadProfile);
     }
 
     final verified = profile.dormVerified;
@@ -152,7 +209,11 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
                     color: Color(0xFFE5EAFF),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.apartment_rounded, color: _blue, size: 30),
+                  child: const Icon(
+                    Icons.apartment_rounded,
+                    color: _blue,
+                    size: 30,
+                  ),
                 ),
                 const SizedBox(width: 13),
                 Expanded(
@@ -161,12 +222,18 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
                     children: [
                       const Text(
                         '현재 등록된 호실',
-                        style: TextStyle(color: Color(0xFF697386), fontSize: 12),
+                        style: TextStyle(
+                          color: Color(0xFF697386),
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         profile.roomNumber ?? '호실 미등록',
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ],
                   ),
@@ -182,14 +249,21 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
                 Row(
                   children: [
                     Icon(
-                      verified ? Icons.verified_rounded : Icons.info_outline_rounded,
-                      color: verified ? const Color(0xFF1D9B55) : const Color(0xFFB57900),
+                      verified
+                          ? Icons.verified_rounded
+                          : Icons.info_outline_rounded,
+                      color: verified
+                          ? const Color(0xFF1D9B55)
+                          : const Color(0xFFB57900),
                       size: 24,
                     ),
                     const SizedBox(width: 9),
                     Text(
                       verified ? '기숙사 인증 완료' : '기숙사 미인증',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ],
                 ),
@@ -208,7 +282,10 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
                   const SizedBox(height: 8),
                   Text(
                     '인증 시각: ${_formatDate(profile.dormVerifiedAt!)}',
-                    style: const TextStyle(color: Color(0xFF8993A5), fontSize: 11),
+                    style: const TextStyle(
+                      color: Color(0xFF8993A5),
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ],
@@ -219,8 +296,45 @@ class _DormVerificationPageState extends State<DormVerificationPage> {
             icon: Icons.location_searching_rounded,
             text: verified
                 ? '기숙사 인증 상태는 서버에서 관리됩니다. 이 화면에서는 상태를 임의로 변경하지 않습니다.'
-                : 'GPS 기반 기숙사 인증 기능은 아직 준비 중입니다. 현재는 호실과 인증 상태만 확인할 수 있습니다.',
+                : '호실 등록 후 GPS 체류 인증을 진행할 수 있습니다. 최종 인증 상태는 서버에서 관리됩니다.',
           ),
+          if (!verified) ...[
+            const SizedBox(height: 14),
+            _Card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'GPS 위치 확인',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '앱을 사용하는 동안에만 현재 위치를 한 번 측정합니다. '
+                    '이 단계에서는 서버 인증을 완료하지 않습니다.',
+                    style: TextStyle(
+                      color: Color(0xFF526079),
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _openLocationVerification,
+                      icon: const Icon(Icons.gps_fixed_rounded),
+                      label: const Text('위치 인증 화면 열기'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _blue,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -13,7 +13,9 @@ import '../../models/product_preview.dart';
 const _blue = Color(0xFF3156D9);
 const _pageBackground = Color(0xFFF7F8FC);
 
-typedef ProductPreviewLoader = Future<ProductPreview> Function(String productUrl);
+typedef ProductPreviewLoader = Future<ProductPreview> Function(
+  String productUrl,
+);
 typedef PostImageUploader = Future<String> Function(
   String filePath,
   String accessToken,
@@ -103,12 +105,14 @@ class _PostCreatePageState extends State<PostCreatePage> {
       hostQuantity: usesStepTwoValues
           ? int.tryParse(_hostQuantityController.text.trim()) ?? 0
           : 1,
-      deadline: _deadline ??
+      deadline:
+          _deadline ??
           (usesStepThreeValues
               ? now.subtract(const Duration(seconds: 1))
               : now.add(const Duration(minutes: 1))),
-      pickupLocation:
-          usesStepThreeValues ? _pickupLocationController.text : '픽업 장소',
+      pickupLocation: usesStepThreeValues
+          ? _pickupLocationController.text
+          : '픽업 장소',
       shortfallPolicy: _shortfallPolicy,
     );
   }
@@ -173,7 +177,8 @@ class _PostCreatePageState extends State<PostCreatePage> {
   Future<void> _loadProductPreview() async {
     final productUrl = _productUrlController.text.trim();
     final uri = Uri.tryParse(productUrl);
-    final isHttpUrl = uri != null &&
+    final isHttpUrl =
+        uri != null &&
         (uri.scheme == 'http' || uri.scheme == 'https') &&
         uri.host.isNotEmpty;
     if (!isHttpUrl) {
@@ -217,19 +222,13 @@ class _PostCreatePageState extends State<PostCreatePage> {
     } on ApiException {
       if (!mounted) return;
       setState(() {
-        _errors = {
-          ..._errors,
-          'product_url': '상품 정보를 불러오지 못했습니다. 링크를 확인해주세요.',
-        };
+        _errors = {..._errors, 'product_url': '상품 정보를 불러오지 못했습니다. 링크를 확인해주세요.'};
       });
       _showMessage('상품 정보를 불러오지 못했습니다. 링크를 확인해주세요.');
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _errors = {
-          ..._errors,
-          'product_url': '상품 정보를 불러오지 못했습니다. 직접 입력해주세요.',
-        };
+        _errors = {..._errors, 'product_url': '상품 정보를 불러오지 못했습니다. 직접 입력해주세요.'};
       });
     } finally {
       if (mounted) setState(() => _isPreviewLoading = false);
@@ -264,7 +263,8 @@ class _PostCreatePageState extends State<PostCreatePage> {
       firstDate: today,
       lastDate: today.add(const Duration(days: 365)),
       builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(colorScheme: const ColorScheme.light(primary: _blue)),
+        data: Theme.of(context)
+            .copyWith(colorScheme: const ColorScheme.light(primary: _blue)),
         child: child!,
       ),
     );
@@ -288,10 +288,7 @@ class _PostCreatePageState extends State<PostCreatePage> {
     );
     if (!selected.isAfter(DateTime.now())) {
       setState(() {
-        _errors = {
-          ..._errors,
-          'deadline': '모집 마감 일시는 현재 시각 이후여야 합니다.',
-        };
+        _errors = {..._errors, 'deadline': '모집 마감 일시는 현재 시각 이후여야 합니다.'};
       });
       return;
     }
@@ -303,7 +300,8 @@ class _PostCreatePageState extends State<PostCreatePage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   // ignore: unused_element
@@ -344,21 +342,18 @@ class _PostCreatePageState extends State<PostCreatePage> {
       setState(() => _isSubmitting = true);
 
       if (_selectedImage != null && _imageUploadId == null) {
-        final uploader = widget.imageUploader ??
-            (filePath, token) => _api.uploadPostImage(
-                  filePath: filePath,
-                  accessToken: token,
-                );
+        final uploader =
+            widget.imageUploader ??
+            (filePath, token) =>
+                _api.uploadPostImage(filePath: filePath, accessToken: token);
         final uploadId = await uploader(_selectedImage!.path, accessToken);
         if (!mounted) return;
         setState(() => _imageUploadId = uploadId);
       }
 
-      final creator = widget.postCreator ??
-          (post, token) => _api.createPost(
-                request: post,
-                accessToken: token,
-              );
+      final creator =
+          widget.postCreator ??
+          (post, token) => _api.createPost(request: post, accessToken: token);
       final createdPost = await creator(_draftRequest(), accessToken);
       if (!mounted) return;
 
@@ -370,6 +365,8 @@ class _PostCreatePageState extends State<PostCreatePage> {
       if (error.code == 'IMAGE_UPLOAD_EXPIRED') {
         setState(() => _imageUploadId = null);
         _showMessage('사진 업로드가 만료되었습니다. 다시 등록해주세요.');
+      } else if (error.code == 'DORM_VERIFICATION_REQUIRED') {
+        _showMessage('기숙사 인증을 완료한 사용자만 공동구매를 등록할 수 있어요.');
       } else {
         _showMessage('공동구매 등록에 실패했습니다. 잠시 후 다시 시도해주세요.');
       }
@@ -407,7 +404,8 @@ class _PostCreatePageState extends State<PostCreatePage> {
             _StepIndicator(activeStep: _showReview ? 3 : _step + 1),
             Expanded(
               child: SingleChildScrollView(
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
                 child: _showReview ? _buildReview() : _buildStep(),
               ),
@@ -416,11 +414,15 @@ class _PostCreatePageState extends State<PostCreatePage> {
               label: _showReview
                   ? '공동구매 등록'
                   : _step == 2
-                      ? '최종 확인'
-                      : '다음',
+                  ? '최종 확인'
+                  : '다음',
               onPressed: _isSubmitting
                   ? null
-                  : (_showReview ? () { _submitPost(); } : _nextStep),
+                  : (_showReview
+                        ? () {
+                            _submitPost();
+                          }
+                        : _nextStep),
               isLoading: _isSubmitting,
             ),
           ],
@@ -476,7 +478,9 @@ class _PostCreatePageState extends State<PostCreatePage> {
             style: OutlinedButton.styleFrom(
               foregroundColor: _blue,
               side: const BorderSide(color: Color(0xFFCBD5FF)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(vertical: 13),
             ),
           ),
@@ -522,11 +526,21 @@ class _PostCreatePageState extends State<PostCreatePage> {
               child: const Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.add_photo_alternate_outlined, color: _blue, size: 32),
+                  Icon(
+                    Icons.add_photo_alternate_outlined,
+                    color: _blue,
+                    size: 32,
+                  ),
                   SizedBox(height: 8),
-                  Text('사진 선택', style: TextStyle(color: _blue, fontWeight: FontWeight.w700)),
+                  Text(
+                    '사진 선택',
+                    style: TextStyle(color: _blue, fontWeight: FontWeight.w700),
+                  ),
                   SizedBox(height: 4),
-                  Text('JPEG, PNG, WebP · 최대 5MB', style: TextStyle(color: Color(0xFF7B8398), fontSize: 11)),
+                  Text(
+                    'JPEG, PNG, WebP · 최대 5MB',
+                    style: TextStyle(color: Color(0xFF7B8398), fontSize: 11),
+                  ),
                 ],
               ),
             ),
@@ -565,7 +579,9 @@ class _PostCreatePageState extends State<PostCreatePage> {
                       }),
                       icon: const Icon(Icons.delete_outline_rounded, size: 17),
                       label: const Text('삭제'),
-                      style: TextButton.styleFrom(foregroundColor: const Color(0xFFB34B55)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFB34B55),
+                      ),
                     ),
                   ],
                 ),
@@ -686,16 +702,24 @@ class _PostCreatePageState extends State<PostCreatePage> {
             onPressed: _pickDeadline,
             icon: const Icon(Icons.event_outlined, size: 19),
             label: Text(
-              _deadline == null ? '날짜와 시간을 선택해주세요' : _formatDeadline(_deadline!),
+              _deadline == null
+                  ? '날짜와 시간을 선택해주세요'
+                  : _formatDeadline(_deadline!),
             ),
             style: OutlinedButton.styleFrom(
               alignment: Alignment.centerLeft,
-              foregroundColor: _deadline == null ? const Color(0xFF7B8398) : _blue,
+              foregroundColor: _deadline == null
+                  ? const Color(0xFF7B8398)
+                  : _blue,
               backgroundColor: Colors.white,
               side: BorderSide(
-                color: _errors['deadline'] == null ? const Color(0xFFDDE2F0) : Colors.redAccent,
+                color: _errors['deadline'] == null
+                    ? const Color(0xFFDDE2F0)
+                    : Colors.redAccent,
               ),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 17),
             ),
           ),
@@ -729,7 +753,9 @@ class _PostCreatePageState extends State<PostCreatePage> {
                 selected: _shortfallPolicy == PostCreateRequest.keepByHost,
                 title: '남은 수량을 제가 부담할게요',
                 subtitle: '목표 수량이 모이지 않아도 거래를 진행합니다.',
-                onTap: () => setState(() => _shortfallPolicy = PostCreateRequest.keepByHost),
+                onTap: () => setState(
+                  () => _shortfallPolicy = PostCreateRequest.keepByHost,
+                ),
               ),
               const SizedBox(height: 8),
               _PolicyOption(
@@ -737,7 +763,9 @@ class _PostCreatePageState extends State<PostCreatePage> {
                 selected: _shortfallPolicy == PostCreateRequest.cancelIfShort,
                 title: '목표 수량이 모이지 않으면 취소할게요',
                 subtitle: '전체 수량을 채우지 못하면 거래를 취소합니다.',
-                onTap: () => setState(() => _shortfallPolicy = PostCreateRequest.cancelIfShort),
+                onTap: () => setState(
+                  () => _shortfallPolicy = PostCreateRequest.cancelIfShort,
+                ),
               ),
             ],
           ),
@@ -786,11 +814,23 @@ class _PostCreatePageState extends State<PostCreatePage> {
           children: [
             _ReviewRow(label: '상품명', value: _productNameController.text.trim()),
             _ReviewRow(label: '전체 구매 가격', value: '${request.totalPrice}원'),
-            _ReviewRow(label: '예상 개당 가격', value: '${request.estimatedUnitPrice.round()}원'),
+            _ReviewRow(
+              label: '예상 개당 가격',
+              value: '${request.estimatedUnitPrice.round()}원',
+            ),
             _ReviewRow(label: '본인 구매 수량', value: '${request.hostQuantity}개'),
-            _ReviewRow(label: '모집 수량', value: '${request.recruitmentQuantity}개'),
-            _ReviewRow(label: '모집 마감', value: _formatDeadline(request.deadline)),
-            _ReviewRow(label: '픽업 장소', value: _pickupLocationController.text.trim()),
+            _ReviewRow(
+              label: '모집 수량',
+              value: '${request.recruitmentQuantity}개',
+            ),
+            _ReviewRow(
+              label: '모집 마감',
+              value: _formatDeadline(request.deadline),
+            ),
+            _ReviewRow(
+              label: '픽업 장소',
+              value: _pickupLocationController.text.trim(),
+            ),
             _ReviewRow(
               label: '미달 처리',
               value: request.shortfallPolicy == PostCreateRequest.keepByHost
@@ -823,7 +863,9 @@ class _StepIndicator extends StatelessWidget {
                   Container(
                     height: 4,
                     decoration: BoxDecoration(
-                      color: activeStep >= index + 1 ? _blue : const Color(0xFFE0E4EF),
+                      color: activeStep >= index + 1
+                          ? _blue
+                          : const Color(0xFFE0E4EF),
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -831,7 +873,9 @@ class _StepIndicator extends StatelessWidget {
                   Text(
                     labels[index],
                     style: TextStyle(
-                      color: activeStep >= index + 1 ? _blue : const Color(0xFF8A92A5),
+                      color: activeStep >= index + 1
+                          ? _blue
+                          : const Color(0xFF8A92A5),
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -858,9 +902,15 @@ class _PageHeading extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+        ),
         const SizedBox(height: 7),
-        Text(subtitle, style: const TextStyle(color: Color(0xFF697386), fontSize: 12)),
+        Text(
+          subtitle,
+          style: const TextStyle(color: Color(0xFF697386), fontSize: 12),
+        ),
       ],
     );
   }
@@ -904,7 +954,10 @@ class _InputField extends StatelessWidget {
         errorText: errorText,
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 15,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFFDDE2F0)),
@@ -940,12 +993,24 @@ class _EstimateCard extends StatelessWidget {
         children: [
           const Align(
             alignment: Alignment.centerLeft,
-            child: Text('예상 금액', style: TextStyle(color: _blue, fontWeight: FontWeight.w800)),
+            child: Text(
+              '예상 금액',
+              style: TextStyle(color: _blue, fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(height: 12),
-          _EstimateRow(label: '예상 개당 가격', value: '${request.estimatedUnitPrice.round()}원'),
-          _EstimateRow(label: '모집자 예상 부담 금액', value: '${request.estimatedHostAmount}원'),
-          _EstimateRow(label: '모집할 수량', value: '${request.recruitmentQuantity}개'),
+          _EstimateRow(
+            label: '예상 개당 가격',
+            value: '${request.estimatedUnitPrice.round()}원',
+          ),
+          _EstimateRow(
+            label: '모집자 예상 부담 금액',
+            value: '${request.estimatedHostAmount}원',
+          ),
+          _EstimateRow(
+            label: '모집할 수량',
+            value: '${request.recruitmentQuantity}개',
+          ),
         ],
       ),
     );
@@ -964,9 +1029,15 @@ class _EstimateRow extends StatelessWidget {
       padding: const EdgeInsets.only(top: 7),
       child: Row(
         children: [
-          Text(label, style: const TextStyle(color: Color(0xFF697386), fontSize: 12)),
+          Text(
+            label,
+            style: const TextStyle(color: Color(0xFF697386), fontSize: 12),
+          ),
           const Spacer(),
-          Text(value, style: const TextStyle(color: _blue, fontWeight: FontWeight.w800)),
+          Text(
+            value,
+            style: const TextStyle(color: _blue, fontWeight: FontWeight.w800),
+          ),
         ],
       ),
     );
@@ -999,22 +1070,34 @@ class _PolicyOption extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(13),
-          border: Border.all(color: selected ? _blue : const Color(0xFFDDE2F0), width: selected ? 1.5 : 1),
+          border: Border.all(
+            color: selected ? _blue : const Color(0xFFDDE2F0),
+            width: selected ? 1.5 : 1,
+          ),
         ),
         child: Row(
           children: [
-            Radio<String>(
-              value: value,
-              activeColor: _blue,
-            ),
+            Radio<String>(value: value, activeColor: _blue),
             const SizedBox(width: 4),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
                   const SizedBox(height: 3),
-                  Text(subtitle, style: const TextStyle(color: Color(0xFF697386), fontSize: 11)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFF697386),
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1039,7 +1122,11 @@ class _ReviewImage extends StatelessWidget {
               width: double.infinity,
               height: 120,
               color: const Color(0xFFE9EEFF),
-              child: const Icon(Icons.shopping_bag_outlined, color: _blue, size: 42),
+              child: const Icon(
+                Icons.shopping_bag_outlined,
+                color: _blue,
+                size: 42,
+              ),
             )
           : Image.file(
               File(image!.path),
@@ -1085,7 +1172,10 @@ class _ReviewRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 112,
-            child: Text(label, style: const TextStyle(color: Color(0xFF697386), fontSize: 12)),
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFF697386), fontSize: 12),
+            ),
           ),
           Expanded(
             child: Text(
@@ -1109,7 +1199,10 @@ class _ErrorText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(left: 12, top: 6),
-      child: Text(message, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+      child: Text(
+        message,
+        style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+      ),
     );
   }
 }
@@ -1133,7 +1226,11 @@ class _BottomAction extends StatelessWidget {
       decoration: const BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Color(0x12000000), blurRadius: 10, offset: Offset(0, -3)),
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 10,
+            offset: Offset(0, -3),
+          ),
         ],
       ),
       child: SizedBox(
@@ -1143,7 +1240,9 @@ class _BottomAction extends StatelessWidget {
           onPressed: onPressed,
           style: FilledButton.styleFrom(
             backgroundColor: _blue,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
           ),
           child: isLoading
               ? const SizedBox(
@@ -1154,7 +1253,10 @@ class _BottomAction extends StatelessWidget {
                     color: Colors.white,
                   ),
                 )
-              : Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+              : Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
         ),
       ),
     );

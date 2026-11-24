@@ -13,6 +13,7 @@ import '../../models/product_preview.dart';
 import '../../models/settlement.dart';
 import '../../models/user_search_result.dart';
 import '../../models/user_profile.dart';
+import '../../models/location_verification.dart';
 import 'api_exception.dart';
 
 const apiBaseUrl = String.fromEnvironment(
@@ -23,12 +24,72 @@ const apiBaseUrl = String.fromEnvironment(
 class DormNApi {
   const DormNApi();
 
-  Future<UserProfile> getMyProfile(String accessToken) async {
+  Future<UserProfile> getMyProfile(
+    String accessToken, {
+    Duration? timeout,
+  }) async {
     final data = await get(
       '/users/me',
       headers: {'Authorization': 'Bearer $accessToken'},
+      timeout: timeout,
     );
     return UserProfile.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  Future<UserProfile> completeDormVerification(String accessToken) async {
+    final data = await post(
+      '/users/me/dorm-verification',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      timeout: const Duration(seconds: 15),
+    );
+    if (data is! Map) {
+      throw const ApiException(
+        0,
+        'INVALID_RESPONSE',
+        '최종 기숙사 인증 응답이 올바르지 않습니다.',
+      );
+    }
+    return UserProfile.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<LocationVerificationStatus> submitLocationCheck({
+    required double latitude,
+    required double longitude,
+    required double accuracyMeters,
+    required String accessToken,
+  }) async {
+    final data = await post(
+      '/users/me/location-check',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      body: {
+        'latitude': latitude,
+        'longitude': longitude,
+        'accuracy_meters': accuracyMeters,
+      },
+      timeout: const Duration(seconds: 15),
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', 'GPS 인증 응답이 올바르지 않습니다.');
+    }
+    return LocationVerificationStatus.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<LocationVerificationStatus> getLocationVerificationStatus({
+    required String accessToken,
+  }) async {
+    final data = await get(
+      '/users/me/location-verification',
+      headers: {'Authorization': 'Bearer $accessToken'},
+      timeout: const Duration(seconds: 15),
+    );
+    if (data is! Map) {
+      throw const ApiException(
+        0,
+        'INVALID_RESPONSE',
+        'GPS 인증 상태 응답이 올바르지 않습니다.',
+      );
+    }
+    return LocationVerificationStatus.fromJson(Map<String, dynamic>.from(data));
   }
 
   Future<List<UserSearchResult>> searchUsersByRoomNumber({
@@ -36,13 +97,8 @@ class DormNApi {
     required String accessToken,
   }) async {
     final normalizedRoomNumber = roomNumber.trim();
-    if (!RegExp(r'^[0-9]{3,4}-[1-9][0-9]*$')
-        .hasMatch(normalizedRoomNumber)) {
-      throw const ApiException(
-        422,
-        'INVALID_ROOM_NUMBER',
-        '호실 번호 형식을 확인해주세요.',
-      );
+    if (!RegExp(r'^[0-9]{3,4}-[1-9][0-9]*$').hasMatch(normalizedRoomNumber)) {
+      throw const ApiException(422, 'INVALID_ROOM_NUMBER', '호실 번호 형식을 확인해주세요.');
     }
 
     final data = await get(
@@ -54,9 +110,8 @@ class DormNApi {
     }
     return data
         .map(
-          (user) => UserSearchResult.fromJson(
-            Map<String, dynamic>.from(user as Map),
-          ),
+          (user) =>
+              UserSearchResult.fromJson(Map<String, dynamic>.from(user as Map)),
         )
         .toList();
   }
@@ -111,9 +166,7 @@ class DormNApi {
         .toList();
   }
 
-  Future<List<ChatRoom>> getChatRooms({
-    required String accessToken,
-  }) async {
+  Future<List<ChatRoom>> getChatRooms({required String accessToken}) async {
     final data = await get(
       '/chat/rooms',
       headers: {'Authorization': 'Bearer $accessToken'},
@@ -122,7 +175,9 @@ class DormNApi {
       throw const ApiException(0, 'INVALID_RESPONSE', '채팅방 목록 응답이 올바르지 않습니다.');
     }
     return data
-        .map((room) => ChatRoom.fromJson(Map<String, dynamic>.from(room as Map)))
+        .map(
+          (room) => ChatRoom.fromJson(Map<String, dynamic>.from(room as Map)),
+        )
         .toList();
   }
 
@@ -135,7 +190,11 @@ class DormNApi {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     if (data is! Map) {
-      throw const ApiException(0, 'INVALID_RESPONSE', '공동구매 채팅방 응답이 올바르지 않습니다.');
+      throw const ApiException(
+        0,
+        'INVALID_RESPONSE',
+        '공동구매 채팅방 응답이 올바르지 않습니다.',
+      );
     }
     return ChatRoom.fromJson(Map<String, dynamic>.from(data));
   }
@@ -161,7 +220,11 @@ class DormNApi {
     int limit = 50,
   }) async {
     if (limit < 1 || limit > 50) {
-      throw ArgumentError.value(limit, 'limit', 'limit must be between 1 and 50');
+      throw ArgumentError.value(
+        limit,
+        'limit',
+        'limit must be between 1 and 50',
+      );
     }
 
     final query = <String>['limit=$limit'];
@@ -191,7 +254,11 @@ class DormNApi {
       throw const ApiException(422, 'INVALID_MESSAGE', '메시지를 입력해주세요.');
     }
     if (trimmedBody.length > 2000) {
-      throw const ApiException(422, 'INVALID_MESSAGE', '메시지는 2,000자 이내로 입력해주세요.');
+      throw const ApiException(
+        422,
+        'INVALID_MESSAGE',
+        '메시지는 2,000자 이내로 입력해주세요.',
+      );
     }
 
     final data = await post(
@@ -337,7 +404,11 @@ class DormNApi {
       },
     );
     if (data is! Map) {
-      throw const ApiException(0, 'INVALID_RESPONSE', '기본 계좌 저장 응답이 올바르지 않습니다.');
+      throw const ApiException(
+        0,
+        'INVALID_RESPONSE',
+        '기본 계좌 저장 응답이 올바르지 않습니다.',
+      );
     }
     return SettlementAccount.fromJson(Map<String, dynamic>.from(data));
   }
@@ -351,7 +422,11 @@ class DormNApi {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     if (data is! Map) {
-      throw const ApiException(0, 'INVALID_RESPONSE', '거래 계좌 확정 응답이 올바르지 않습니다.');
+      throw const ApiException(
+        0,
+        'INVALID_RESPONSE',
+        '거래 계좌 확정 응답이 올바르지 않습니다.',
+      );
     }
     return Map<String, dynamic>.from(data);
   }
@@ -367,7 +442,11 @@ class DormNApi {
       body: {'status': status},
     );
     if (data is! Map) {
-      throw const ApiException(0, 'INVALID_RESPONSE', '거래 상태 변경 응답이 올바르지 않습니다.');
+      throw const ApiException(
+        0,
+        'INVALID_RESPONSE',
+        '거래 상태 변경 응답이 올바르지 않습니다.',
+      );
     }
     return Map<String, dynamic>.from(data);
   }
@@ -395,7 +474,11 @@ class DormNApi {
       headers: {'Authorization': 'Bearer $accessToken'},
     );
     if (data is! Map) {
-      throw const ApiException(0, 'INVALID_RESPONSE', '모집자 정산 목록 응답이 올바르지 않습니다.');
+      throw const ApiException(
+        0,
+        'INVALID_RESPONSE',
+        '모집자 정산 목록 응답이 올바르지 않습니다.',
+      );
     }
     return HostSettlementSummary.fromJson(Map<String, dynamic>.from(data));
   }
@@ -455,14 +538,18 @@ class DormNApi {
     return Map<String, dynamic>.from(data);
   }
 
-  Future<dynamic> get(String path, {Map<String, String>? headers}) =>
-      _request('GET', path, headers: headers);
+  Future<dynamic> get(
+    String path, {
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) => _request('GET', path, headers: headers, timeout: timeout);
 
   Future<dynamic> post(
     String path, {
     Map<String, String>? headers,
     Object? body,
-  }) => _request('POST', path, headers: headers, body: body);
+    Duration? timeout,
+  }) => _request('POST', path, headers: headers, body: body, timeout: timeout);
 
   Future<dynamic> patch(
     String path, {
@@ -496,6 +583,7 @@ class DormNApi {
     String path, {
     Map<String, String>? headers,
     Object? body,
+    Duration? timeout,
   }) async {
     final request = http.Request(method, Uri.parse('$apiBaseUrl$path'))
       ..headers.addAll({
@@ -508,7 +596,11 @@ class DormNApi {
       request.body = jsonEncode(body);
     }
 
-    final response = await http.Response.fromStream(await request.send());
+    final response = await http.Response.fromStream(
+      await (timeout == null
+          ? request.send()
+          : request.send().timeout(timeout)),
+    );
     return _parseResponse(response);
   }
 

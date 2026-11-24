@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 from uuid import UUID
 
@@ -48,6 +49,42 @@ class UserResponse(BaseModel):
     dorm_verified: bool
     dorm_verified_at: datetime | None
     created_at: datetime
+
+
+class LocationCheckRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy_meters: float = Field(ge=0)
+
+    @field_validator("latitude", "longitude", "accuracy_meters", mode="before")
+    @classmethod
+    def require_finite_number(cls, value: object) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("value must be a finite number") from exc
+        if not math.isfinite(parsed):
+            raise ValueError("value must be a finite number")
+        return parsed
+
+
+class LocationVerificationResponse(BaseModel):
+    status: str
+    valid_check_count: int
+    required_check_count: int
+    first_valid_check_at: datetime | None
+    last_valid_check_at: datetime | None
+    last_check_at: datetime | None
+    dwell_seconds: int
+    minimum_dwell_seconds: int
+    dwell_satisfied: bool
+    interval_satisfied: bool
+    additional_check_required: bool
+    eligible_time_start: str
+    eligible_time_end: str
+    eligible_time_zone: str
+    next_check_at: datetime | None
+    message: str | None = None
 
 
 class UserSearchResponse(BaseModel):
