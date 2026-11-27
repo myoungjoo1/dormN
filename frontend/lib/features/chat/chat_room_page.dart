@@ -43,6 +43,7 @@ class _ChatRoomPageState extends State<ChatRoomPage>
   bool _isLoading = true;
   bool _isLoadingOlder = false;
   bool _isSending = false;
+  final Set<int> _deletingMessageIds = {};
   bool _hasMoreMessages = true;
   bool _recoveryIncomplete = false;
   ChatWebSocketStatus _webSocketStatus = ChatWebSocketStatus.disconnected;
@@ -91,6 +92,14 @@ class _ChatRoomPageState extends State<ChatRoomPage>
         return '이 채팅방에 접근할 권한이 없습니다.';
       case 'CHAT_ROOM_READ_ONLY':
         return '거래가 종료되어 메시지를 보낼 수 없습니다.';
+      case 'CHAT_MESSAGE_NOT_FOUND':
+        return '삭제할 메시지를 찾을 수 없습니다.';
+      case 'CHAT_MESSAGE_DELETE_FORBIDDEN':
+        return '본인이 보낸 메시지만 삭제할 수 있습니다.';
+      case 'SYSTEM_MESSAGE_DELETE_NOT_ALLOWED':
+        return '시스템 메시지는 삭제할 수 없습니다.';
+      case 'MESSAGE_DELETE_WINDOW_EXPIRED':
+        return '메시지는 전송 후 10분 이내에만 삭제할 수 있습니다.';
       default:
         return error.message;
     }
@@ -451,6 +460,67 @@ class _ChatRoomPageState extends State<ChatRoomPage>
     }
   }
 
+  Future<void> _deleteMessage(ChatMessage message) async {
+    if (!_isMine(message) ||
+        !message.isUserMessage ||
+        message.isDeleted ||
+        _deletingMessageIds.contains(message.id)) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('메시지 삭제'),
+        content: const Text('이 메시지를 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final session = _currentSession();
+    if (session == null) {
+      _showMessage('로그인이 필요합니다. 다시 로그인해주세요.');
+      return;
+    }
+
+    final requestVersion = _loadRequestVersion;
+    final userId = session.user.id;
+    setState(() => _deletingMessageIds.add(message.id));
+    try {
+      final deletedMessage = await _api.deleteChatMessage(
+        roomId: widget.room.id,
+        messageId: message.id,
+        accessToken: session.accessToken,
+      );
+      if (!mounted ||
+          requestVersion != _loadRequestVersion ||
+          _currentSession()?.user.id != userId) {
+        return;
+      }
+      setState(() {
+        _messages = _mergeMessages(_messages, [deletedMessage]);
+      });
+    } on ApiException catch (error) {
+      if (mounted) _showMessage(_errorMessage(error));
+    } catch (_) {
+      if (mounted) _showMessage('메시지를 삭제하지 못했습니다. 다시 시도해주세요.');
+    } finally {
+      if (mounted) {
+        setState(() => _deletingMessageIds.remove(message.id));
+      }
+    }
+  }
+
   Future<void> _refreshPostStatus() async {
     if (!widget.room.isGroup || widget.room.postId == null) return;
 
@@ -669,6 +739,12 @@ class _ChatRoomPageState extends State<ChatRoomPage>
                   message: message,
                   isMine: _isMine(message),
                   time: _formatTime(message.createdAt),
+                  onDelete:
+                      _isMine(message) &&
+                          message.isUserMessage &&
+                          !message.isDeleted
+                      ? () => _deleteMessage(message)
+                      : null,
                 ),
               ],
             );
@@ -696,11 +772,13 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     required this.isMine,
     required this.time,
+    required this.onDelete,
   });
 
   final ChatMessage message;
   final bool isMine;
   final String time;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -724,24 +802,36 @@ class _MessageBubble extends StatelessWidget {
       );
     }
 
-    final bubble = Container(
-      constraints: const BoxConstraints(maxWidth: 290),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: isMine ? _blue : Colors.white,
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(17),
-          topRight: const Radius.circular(17),
-          bottomLeft: Radius.circular(isMine ? 17 : 4),
-          bottomRight: Radius.circular(isMine ? 4 : 17),
+    final bubble = GestureDetector(
+      onLongPress: onDelete,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 290),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: message.isDeleted
+              ? const Color(0xFFE9ECF2)
+              : isMine
+              ? _blue
+              : Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(17),
+            topRight: const Radius.circular(17),
+            bottomLeft: Radius.circular(isMine ? 17 : 4),
+            bottomRight: Radius.circular(isMine ? 4 : 17),
+          ),
         ),
-      ),
-      child: Text(
-        message.body,
-        style: TextStyle(
-          color: isMine ? Colors.white : const Color(0xFF172033),
-          fontSize: 14,
-          height: 1.35,
+        child: Text(
+          message.body,
+          style: TextStyle(
+            color: message.isDeleted
+                ? const Color(0xFF697386)
+                : isMine
+                ? Colors.white
+                : const Color(0xFF172033),
+            fontSize: 14,
+            height: 1.35,
+            fontStyle: message.isDeleted ? FontStyle.italic : FontStyle.normal,
+          ),
         ),
       ),
     );

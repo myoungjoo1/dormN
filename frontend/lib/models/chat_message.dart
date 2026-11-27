@@ -6,6 +6,7 @@ class ChatMessage {
     required this.messageType,
     required this.body,
     required this.createdAt,
+    required this.deletedAt,
   });
 
   final int id;
@@ -14,9 +15,11 @@ class ChatMessage {
   final String messageType;
   final String body;
   final DateTime createdAt;
+  final DateTime? deletedAt;
 
   bool get isUserMessage => messageType == 'USER';
   bool get isSystemMessage => messageType == 'SYSTEM';
+  bool get isDeleted => deletedAt != null;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     return ChatMessage(
@@ -26,6 +29,9 @@ class ChatMessage {
       messageType: json['message_type'] as String,
       body: json['body'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
+      deletedAt: json['deleted_at'] == null
+          ? null
+          : DateTime.parse(json['deleted_at'] as String),
     );
   }
 }

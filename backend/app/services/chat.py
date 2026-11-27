@@ -61,7 +61,7 @@ def create_group_system_message(conn, post_id: int, status: str):
                   AND message_type = 'SYSTEM'
                   AND body = %s
             )
-            RETURNING id, room_id, sender_id, message_type, body, created_at
+            RETURNING id, room_id, sender_id, message_type, body, created_at, deleted_at
             """,
             (room["id"], body, room["id"], body),
         )
@@ -79,5 +79,6 @@ def create_group_system_message(conn, post_id: int, status: str):
             "message_type": message["message_type"],
             "body": message["body"],
             "created_at": message["created_at"],
+            "deleted_at": message.get("deleted_at"),
         },
     }

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, WebSocket, WebSocketDisconnect, status
@@ -18,6 +19,8 @@ from app.schemas.chat import (
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
+CHAT_MESSAGE_DELETE_WINDOW = timedelta(minutes=10)
+DELETED_MESSAGE_BODY = "삭제된 메시지입니다."
 
 
 class ConnectionManager:
@@ -241,7 +244,7 @@ def send_chat_message(
                     body
                 )
                 VALUES (%s, %s, 'USER', %s)
-                RETURNING id, sender_id, message_type, body, created_at
+                RETURNING id, sender_id, message_type, body, created_at, deleted_at
                 """,
                 (room_id, current_user_id, message.body),
             )
@@ -274,6 +277,102 @@ def send_chat_message(
     }
 
 
+@router.delete(
+    "/chat/rooms/{room_id}/messages/{message_id}",
+    response_model=ApiResponse[ChatMessageResponse],
+)
+def delete_chat_message(
+    room_id: int,
+    message_id: int,
+    background_tasks: BackgroundTasks,
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    newly_deleted = False
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            _require_verified_user(cursor, current_user_id)
+            _get_accessible_room(cursor, room_id, current_user_id)
+
+            cursor.execute(
+                """
+                SELECT
+                    m.id,
+                    m.sender_id,
+                    u.room_number AS sender_room_number,
+                    m.message_type,
+                    m.body,
+                    m.created_at,
+                    m.deleted_at
+                FROM public.chat_messages AS m
+                LEFT JOIN public.users AS u ON u.id = m.sender_id
+                WHERE m.id = %s
+                  AND m.room_id = %s
+                FOR UPDATE OF m
+                """,
+                (message_id, room_id),
+            )
+            row = cursor.fetchone()
+
+            if row is None:
+                raise ApiException(
+                    404,
+                    "CHAT_MESSAGE_NOT_FOUND",
+                    "Chat message not found",
+                )
+            if row["message_type"] != "USER":
+                raise ApiException(
+                    409,
+                    "SYSTEM_MESSAGE_DELETE_NOT_ALLOWED",
+                    "System messages cannot be deleted",
+                )
+            if row["sender_id"] != current_user_id:
+                raise ApiException(
+                    403,
+                    "CHAT_MESSAGE_DELETE_FORBIDDEN",
+                    "Only the sender can delete this message",
+                )
+
+            if row["deleted_at"] is None:
+                if datetime.now(timezone.utc) - row["created_at"] > CHAT_MESSAGE_DELETE_WINDOW:
+                    raise ApiException(
+                        409,
+                        "MESSAGE_DELETE_WINDOW_EXPIRED",
+                        "The message delete window has expired",
+                    )
+
+                cursor.execute(
+                    """
+                    UPDATE public.chat_messages
+                    SET deleted_at = NOW()
+                    WHERE id = %s
+                    RETURNING deleted_at
+                    """,
+                    (message_id,),
+                )
+                updated = cursor.fetchone()
+                row["deleted_at"] = updated["deleted_at"]
+                newly_deleted = True
+
+    response = ChatMessageResponse(
+        id=row["id"],
+        sender_id=row["sender_id"],
+        sender_room_number=row["sender_room_number"],
+        message_type=row["message_type"],
+        body=DELETED_MESSAGE_BODY,
+        created_at=row["created_at"],
+        deleted_at=row["deleted_at"],
+    )
+
+    if newly_deleted:
+        background_tasks.add_task(
+            connection_manager.broadcast,
+            room_id,
+            {"data": response.model_dump(mode="json")},
+        )
+
+    return {"data": response}
+
+
 @router.get(
     "/chat/rooms/{room_id}/messages",
     response_model=ApiResponse[list[ChatMessageResponse]],
@@ -296,8 +395,12 @@ def get_room_messages(
                     m.sender_id,
                     u.room_number AS sender_room_number,
                     m.message_type,
-                    m.body,
-                    m.created_at
+                    CASE
+                        WHEN m.deleted_at IS NULL THEN m.body
+                        ELSE %s
+                    END AS body,
+                    m.created_at,
+                    m.deleted_at
                 FROM public.chat_messages AS m
                 LEFT JOIN public.users AS u ON u.id = m.sender_id
                 WHERE m.room_id = %s
@@ -305,7 +408,7 @@ def get_room_messages(
                 ORDER BY m.id DESC
                 LIMIT %s
                 """,
-                (room_id, before_id, before_id, limit),
+                (DELETED_MESSAGE_BODY, room_id, before_id, before_id, limit),
             )
             rows = cursor.fetchall()
 

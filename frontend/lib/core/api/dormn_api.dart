@@ -272,6 +272,21 @@ class DormNApi {
     return ChatMessage.fromJson(Map<String, dynamic>.from(data));
   }
 
+  Future<ChatMessage> deleteChatMessage({
+    required int roomId,
+    required int messageId,
+    required String accessToken,
+  }) async {
+    final data = await delete(
+      '/chat/rooms/$roomId/messages/$messageId',
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    if (data is! Map) {
+      throw const ApiException(0, 'INVALID_RESPONSE', '메시지 삭제 응답이 올바르지 않습니다.');
+    }
+    return ChatMessage.fromJson(Map<String, dynamic>.from(data));
+  }
+
   Future<ParticipationQuote> quoteParticipation({
     required int postId,
     required int quantity,
@@ -562,6 +577,9 @@ class DormNApi {
     Map<String, String>? headers,
     Object? body,
   }) => _request('PUT', path, headers: headers, body: body);
+
+  Future<dynamic> delete(String path, {Map<String, String>? headers}) =>
+      _request('DELETE', path, headers: headers);
 
   Future<dynamic> uploadImage(
     String path, {

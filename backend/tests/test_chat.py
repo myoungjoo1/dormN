@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.routers.chat import (
     ConnectionManager,
     create_direct_chat,
+    delete_chat_message,
     get_chat_rooms,
     get_post_chat,
     get_room_messages,
@@ -108,14 +109,23 @@ def accessible_room(post_status="RECRUITING", group_access=True, dm_access=False
     }
 
 
-def message_row(message_id=99, body="안녕하세요"):
+def message_row(
+    message_id=99,
+    body="안녕하세요",
+    *,
+    sender_id=CURRENT_USER_ID,
+    message_type="USER",
+    created_at=ROOM_CREATED_AT,
+    deleted_at=None,
+):
     return {
         "id": message_id,
-        "sender_id": CURRENT_USER_ID,
+        "sender_id": sender_id,
         "sender_room_number": "717-1",
-        "message_type": "USER",
+        "message_type": message_type,
         "body": body,
-        "created_at": ROOM_CREATED_AT,
+        "created_at": created_at,
+        "deleted_at": deleted_at,
     }
 
 
@@ -202,7 +212,133 @@ class ChatRoomTest(unittest.TestCase):
         self.assertEqual([message.id for message in result["data"]], [99, 98])
         query, params = connection.cursor_instance.calls[-1]
         self.assertIn("m.id < %s", query)
-        self.assertEqual(params, (100, 100, 100, 50))
+        self.assertIn("WHEN m.deleted_at IS NULL THEN m.body", query)
+        self.assertEqual(
+            params,
+            ("삭제된 메시지입니다.", 100, 100, 100, 50),
+        )
+
+    def test_sender_can_soft_delete_recent_message_in_read_only_room(self):
+        now = datetime.now(timezone.utc)
+        updated = {"deleted_at": now}
+        connection = FakeConnection(
+            fetchone_rows=[
+                verified_user(),
+                accessible_room("COMPLETED"),
+                message_row(created_at=now),
+                updated,
+            ]
+        )
+        background_tasks = BackgroundTasks()
+
+        with patch("app.routers.chat.get_connection", return_value=connection):
+            result = delete_chat_message(
+                100,
+                99,
+                background_tasks,
+                CURRENT_USER_ID,
+            )
+
+        self.assertEqual(result["data"].body, "삭제된 메시지입니다.")
+        self.assertEqual(result["data"].deleted_at, now)
+        self.assertEqual(len(background_tasks.tasks), 1)
+        self.assertTrue(
+            any(
+                "SET deleted_at = NOW()" in query
+                for query, _ in connection.cursor_instance.calls
+            )
+        )
+
+    def test_other_user_cannot_delete_message(self):
+        connection = FakeConnection(
+            fetchone_rows=[
+                verified_user(),
+                accessible_room(),
+                message_row(sender_id=TARGET_USER_ID),
+            ]
+        )
+
+        with patch("app.routers.chat.get_connection", return_value=connection):
+            with self.assertRaises(HTTPException) as context:
+                delete_chat_message(
+                    100,
+                    99,
+                    BackgroundTasks(),
+                    CURRENT_USER_ID,
+                )
+
+        self.assertEqual(context.exception.status_code, 403)
+        self.assertEqual(context.exception.code, "CHAT_MESSAGE_DELETE_FORBIDDEN")
+
+    def test_system_message_cannot_be_deleted(self):
+        connection = FakeConnection(
+            fetchone_rows=[
+                verified_user(),
+                accessible_room(),
+                message_row(sender_id=None, message_type="SYSTEM"),
+            ]
+        )
+
+        with patch("app.routers.chat.get_connection", return_value=connection):
+            with self.assertRaises(HTTPException) as context:
+                delete_chat_message(
+                    100,
+                    99,
+                    BackgroundTasks(),
+                    CURRENT_USER_ID,
+                )
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(context.exception.code, "SYSTEM_MESSAGE_DELETE_NOT_ALLOWED")
+
+    def test_expired_message_cannot_be_deleted(self):
+        connection = FakeConnection(
+            fetchone_rows=[
+                verified_user(),
+                accessible_room(),
+                message_row(),
+            ]
+        )
+
+        with patch("app.routers.chat.get_connection", return_value=connection):
+            with self.assertRaises(HTTPException) as context:
+                delete_chat_message(
+                    100,
+                    99,
+                    BackgroundTasks(),
+                    CURRENT_USER_ID,
+                )
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(context.exception.code, "MESSAGE_DELETE_WINDOW_EXPIRED")
+
+    def test_deleting_an_already_deleted_message_is_idempotent(self):
+        now = datetime.now(timezone.utc)
+        connection = FakeConnection(
+            fetchone_rows=[
+                verified_user(),
+                accessible_room(),
+                message_row(created_at=now, deleted_at=now),
+            ]
+        )
+        background_tasks = BackgroundTasks()
+
+        with patch("app.routers.chat.get_connection", return_value=connection):
+            result = delete_chat_message(
+                100,
+                99,
+                background_tasks,
+                CURRENT_USER_ID,
+            )
+
+        self.assertEqual(result["data"].body, "삭제된 메시지입니다.")
+        self.assertEqual(background_tasks.tasks, [])
+        self.assertFalse(
+            any(
+                "UPDATE public.chat_messages" in query
+                for query, _ in connection.cursor_instance.calls
+            )
+        )
 
     def test_db_failure_does_not_schedule_websocket_delivery(self):
         class FailingCursor(FakeCursor):

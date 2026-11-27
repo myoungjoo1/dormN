@@ -40,3 +40,4 @@ class ChatMessageResponse(BaseModel):
     message_type: Literal["USER", "SYSTEM"]
     body: str
     created_at: datetime
+    deleted_at: datetime | None = None
